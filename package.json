@@ -14,7 +14,7 @@
     "db:clear-ts": "npx ts-node src/utils/clearDatabase.ts clear",
     "db:add-test-invites": "node add-test-invites.js add",
     "db:show-invites": "node add-test-invites.js show",
-     "preinstall": "apt-get update && apt-get install -y python3 make g++"
+    "preinstall": "apt-get update && apt-get install -y python3 make g++"
   },
   "repository": {
     "type": "git",
@@ -35,6 +35,7 @@
     "express": "^5.1.0",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
+    "pg": "^8.16.3",
     "speakeasy": "^2.0.0",
     "uuid": "^9.0.1"
   },
