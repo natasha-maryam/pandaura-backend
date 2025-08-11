@@ -17,12 +17,12 @@ router.get('/cors-test', (req, res) => {
 router.get('/db-connection', async (req, res) => {
   try {
     if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
-      // Test Vercel Postgres connection
+      // Test PostgreSQL connection
       const { sql } = require('@vercel/postgres');
       const result = await sql`SELECT 1 as test`;
       res.json({
         status: 'healthy',
-        database: 'vercel-postgres',
+        database: 'postgresql',
         connection: true,
         timestamp: new Date().toISOString()
       });
@@ -39,7 +39,7 @@ router.get('/db-connection', async (req, res) => {
   } catch (error) {
     res.status(500).json({
       status: 'error',
-      database: process.env.VERCEL ? 'vercel-postgres' : 'sqlite',
+      database: process.env.VERCEL ? 'postgresql' : 'sqlite',
       message: (error as Error).message,
       timestamp: new Date().toISOString()
     });
