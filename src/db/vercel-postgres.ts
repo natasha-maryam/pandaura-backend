@@ -192,41 +192,6 @@ export const db = {
       )
     `;
 
-    // Create organizations table
-    await sql`
-      CREATE TABLE IF NOT EXISTS organizations (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW()
-      )
-    `;
-
-    // Create invites table
-    await sql`
-      CREATE TABLE IF NOT EXISTS invites (
-        id TEXT PRIMARY KEY,
-        email TEXT NOT NULL,
-        token TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW()
-      )
-    `;
-
-    // Create team_members table
-    await sql`
-      CREATE TABLE IF NOT EXISTS team_members (
-        id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        organization_id TEXT NOT NULL,
-        role TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW(),
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-        FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
-      )
-    `;
-    
     console.log('Database tables initialized successfully');
   }
 };
