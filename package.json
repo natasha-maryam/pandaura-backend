@@ -1,0 +1,53 @@
+{
+  "name": "pandora-backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.ts",
+  "scripts": {
+    "build": "npx tsc",
+    "start": "node dist/index.js",
+    "dev": "concurrently \"npx tsc --watch\" \"nodemon dist/index.js\"",
+    "vercel-build": "npx tsc",
+    "migrate": "node ./dist/migrate.js || echo 'Run migrations manually with sqlite3'",
+    "db:clear": "node clear-database.js clear",
+    "db:counts": "node clear-database.js counts",
+    "db:clear-ts": "npx ts-node src/utils/clearDatabase.ts clear",
+    "db:add-test-invites": "node add-test-invites.js add",
+    "db:show-invites": "node add-test-invites.js show"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jazykhan3/pandora-backend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/jazykhan3/pandora-backend/issues"
+  },
+  "homepage": "https://github.com/jazykhan3/pandora-backend#readme",
+  "dependencies": {
+    "@vercel/postgres": "^0.10.0",
+    "argon2": "^0.31.2",
+    "better-sqlite3": "^12.2.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "speakeasy": "^2.0.0",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.3",
+    "@types/jsonwebtoken": "^9.0.5",
+    "@types/node": "^24.2.1",
+    "@types/speakeasy": "^2.0.10",
+    "@types/uuid": "^9.0.7",
+    "concurrently": "^9.2.0",
+    "nodemon": "^3.1.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2"
+  }
+}
