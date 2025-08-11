@@ -13,7 +13,8 @@
     "db:counts": "node clear-database.js counts",
     "db:clear-ts": "npx ts-node src/utils/clearDatabase.ts clear",
     "db:add-test-invites": "node add-test-invites.js add",
-    "db:show-invites": "node add-test-invites.js show"
+    "db:show-invites": "node add-test-invites.js show",
+     "preinstall": "apt-get update && apt-get install -y python3 make g++"
   },
   "repository": {
     "type": "git",

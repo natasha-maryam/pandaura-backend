@@ -523,7 +523,10 @@ router.post('/login', async (req, res) => {
 
     res.json({ 
       token, 
-      userId: user.id, 
+      userId: user.id,
+      fullName: user.full_name, // Add user's full name
+      email: user.email,
+      twoFactorEnabled: user.two_factor_enabled,
       orgId: primaryOrg.org_id, 
       role: primaryOrg.role,
       orgName: primaryOrg.org_name,
