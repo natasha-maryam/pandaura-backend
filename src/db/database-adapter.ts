@@ -4,9 +4,9 @@ import { db as vercelDB } from './vercel-postgres';
 
 export async function initializeTables() {
   try {
-    if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
-      // Use Vercel Postgres in production
-      console.log('Initializing Vercel Postgres tables...');
+    if (process.env.VERCEL || process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production') {
+      // Use PostgreSQL in production (Vercel or Railway)
+      console.log('Initializing PostgreSQL tables...');
       await vercelDB.initializeTables();
     } else {
       // Use SQLite for local development
@@ -20,6 +20,6 @@ export async function initializeTables() {
 }
 
 // Export the appropriate database instance
-export const db = process.env.VERCEL || process.env.NODE_ENV === 'production' 
+export const db = process.env.VERCEL || process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production' 
   ? vercelDB 
   : require('./index').default;
