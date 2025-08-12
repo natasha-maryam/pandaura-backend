@@ -3,7 +3,7 @@ import argon2 from 'argon2';
 import speakeasy from 'speakeasy';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
-import db from '../db';
+import { db } from '../db/database-adapter';
 import { authenticateToken, generateToken, AuthenticatedRequest } from '../middleware/authMiddleware';
 import { logAuditEvent } from '../middleware/auditLogger';
 

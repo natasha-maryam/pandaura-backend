@@ -1,7 +1,7 @@
 import express from 'express';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
-import db from '../db';
+import { db } from '../db/database-adapter';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/authMiddleware';
 import { rbacMiddleware } from '../middleware/rbacMiddleware';
 import { logAuditEvent } from '../middleware/auditLogger';

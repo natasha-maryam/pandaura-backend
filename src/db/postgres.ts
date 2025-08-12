@@ -46,6 +46,11 @@ export const db = {
     return result.rows[0] || null;
   },
 
+  async getAllUsers() {
+    const result = await pool.query(`SELECT * FROM users`);
+    return result.rows;
+  },
+
   async updateUser(id: string, updates: any) {
     const setClause = Object.keys(updates)
       .map((key, index) => `${key} = $${index + 2}`)

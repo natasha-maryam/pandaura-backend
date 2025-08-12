@@ -1,7 +1,7 @@
 import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
-import db from '../db';
+import { db } from '../db/database-adapter';
 
 const router = express.Router();
 
@@ -12,6 +12,61 @@ router.get('/cors-test', (req, res) => {
     origin: req.get('Origin'),
     timestamp: new Date().toISOString()
   });
+});
+
+// Database connection and environment debug endpoint
+router.get('/db-debug', async (req, res) => {
+  try {
+    const isProduction = process.env.VERCEL || process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production';
+    const databaseType = isProduction ? 'PostgreSQL' : 'SQLite';
+    
+    // Test database connection
+    let connectionTest;
+    let userCount = 0;
+    
+    if (isProduction) {
+      // PostgreSQL queries
+      try {
+        const users = await db.getAllUsers();
+        userCount = users.length;
+        connectionTest = { success: true, type: 'postgresql' };
+      } catch (error) {
+        connectionTest = { success: false, error: (error as Error).message };
+      }
+    } else {
+      // SQLite queries
+      try {
+        const result = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
+        userCount = result.count;
+        connectionTest = { success: true, type: 'sqlite' };
+      } catch (error) {
+        connectionTest = { success: false, error: (error as Error).message };
+      }
+    }
+    
+    res.json({
+      database: {
+        type: databaseType,
+        isProduction,
+        connection: connectionTest,
+        userCount
+      },
+      environment: {
+        NODE_ENV: process.env.NODE_ENV,
+        VERCEL: !!process.env.VERCEL,
+        RAILWAY_ENVIRONMENT: !!process.env.RAILWAY_ENVIRONMENT,
+        hasPostgresUrl: !!process.env.POSTGRES_URL,
+        dbPath: process.env.DB_PATH
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Database debug failed',
+      message: (error as Error).message,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 router.get('/db-connection', async (req, res) => {

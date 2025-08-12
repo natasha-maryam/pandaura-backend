@@ -19,7 +19,21 @@ export async function initializeTables() {
   }
 }
 
+// Determine which database to use
+const isProduction = process.env.VERCEL || process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production';
+
+// Log which database is being used
+if (isProduction) {
+  console.log('🐘 Using PostgreSQL database for production environment');
+  console.log('Environment flags:', {
+    VERCEL: !!process.env.VERCEL,
+    RAILWAY_ENVIRONMENT: !!process.env.RAILWAY_ENVIRONMENT,
+    NODE_ENV: process.env.NODE_ENV
+  });
+} else {
+  console.log('🗄️ Using SQLite database for development environment');
+  console.log('Database path:', process.env.DB_PATH || 'default');
+}
+
 // Export the appropriate database instance
-export const db = process.env.VERCEL || process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production' 
-  ? postgresDB 
-  : require('./index').default;
+export const db = isProduction ? postgresDB : require('./index').default;
