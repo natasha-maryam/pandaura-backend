@@ -1,19 +1,18 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.logAuditEvent = logAuditEvent;
-const database_adapter_1 = require("../db/database-adapter");
+const db_1 = __importDefault(require("../db"));
 const uuid_1 = require("uuid");
 async function logAuditEvent(entry) {
     try {
-        await database_adapter_1.db.createAuditLog({
-            id: (0, uuid_1.v4)(),
-            userId: entry.userId,
-            orgId: entry.orgId,
-            action: entry.action,
-            ipAddress: entry.ip,
-            userAgent: entry.userAgent,
-            metadata: entry.metadata
-        });
+        const stmt = db_1.default.prepare(`
+      INSERT INTO audit_logs (id, user_id, org_id, action, ip_address, user_agent, metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+        stmt.run((0, uuid_1.v4)(), entry.userId || null, entry.orgId || null, entry.action, entry.ip || null, entry.userAgent || null, entry.metadata ? JSON.stringify(entry.metadata) : null);
     }
     catch (err) {
         console.error('Audit log error:', err);

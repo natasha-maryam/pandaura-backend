@@ -1,11 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.rawDb = exports.db = void 0;
+exports.db = void 0;
 exports.initializeTables = initializeTables;
-// Environment-aware database initialization with abstraction layer
+// Environment-aware database initialization
 const tables_1 = require("./tables");
 const postgres_1 = require("./postgres");
-const database_abstraction_1 = require("./database-abstraction");
 async function initializeTables() {
     try {
         if (process.env.VERCEL || process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production') {
@@ -39,7 +38,5 @@ else {
     console.log('🗄️ Using SQLite database for development environment');
     console.log('Database path:', process.env.DB_PATH || 'default');
 }
-// Export the unified database adapter that works for both SQLite and PostgreSQL
-exports.db = database_abstraction_1.dbAdapter;
-// Keep the raw database exports for any legacy code that might need them
-exports.rawDb = isProduction ? postgres_1.db : require('./index').default;
+// Export the appropriate database instance
+exports.db = isProduction ? postgres_1.db : require('./index').default;

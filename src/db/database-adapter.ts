@@ -1,7 +1,6 @@
-// Environment-aware database initialization with abstraction layer
+// Environment-aware database initialization
 import { initializeTables as initSQLiteTables } from './tables';
 import { db as postgresDB } from './postgres';
-import { dbAdapter } from './database-abstraction';
 
 export async function initializeTables() {
   try {
@@ -36,8 +35,5 @@ if (isProduction) {
   console.log('Database path:', process.env.DB_PATH || 'default');
 }
 
-// Export the unified database adapter that works for both SQLite and PostgreSQL
-export const db = dbAdapter;
-
-// Keep the raw database exports for any legacy code that might need them
-export const rawDb = isProduction ? postgresDB : require('./index').default;
+// Export the appropriate database instance
+export const db = isProduction ? postgresDB : require('./index').default;
