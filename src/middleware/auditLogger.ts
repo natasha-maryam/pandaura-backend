@@ -1,4 +1,4 @@
-import db from '../db';
+import { db } from '../db/database-adapter';
 import { v4 as uuidv4 } from 'uuid';
 
 interface AuditLogEntry {
@@ -12,20 +12,15 @@ interface AuditLogEntry {
 
 export async function logAuditEvent(entry: AuditLogEntry): Promise<void> {
   try {
-    const stmt = db.prepare(`
-      INSERT INTO audit_logs (id, user_id, org_id, action, ip_address, user_agent, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    stmt.run(
-      uuidv4(),
-      entry.userId || null,
-      entry.orgId || null,
-      entry.action,
-      entry.ip || null,
-      entry.userAgent || null,
-      entry.metadata ? JSON.stringify(entry.metadata) : null
-    );
+    await db.createAuditLog({
+      id: uuidv4(),
+      userId: entry.userId,
+      orgId: entry.orgId,
+      action: entry.action,
+      ipAddress: entry.ip,
+      userAgent: entry.userAgent,
+      metadata: entry.metadata
+    });
   } catch (err) {
     console.error('Audit log error:', err);
   }
