@@ -7,6 +7,7 @@ import helmet from 'helmet';
 import { initializeTables } from './db/database-adapter';
 import authRoutes from './routes/auth';
 import orgRoutes from './routes/orgs';
+import testRoutes from './routes/test';
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -69,6 +70,7 @@ initializeTables().catch(console.error);
 // Routes
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/orgs', orgRoutes);
+app.use('/api/v1/test', testRoutes);
 
 app.get('/', (req, res) => {
   res.json({ 
