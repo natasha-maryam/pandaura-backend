@@ -16,12 +16,7 @@ router.get('/:orgId', rbacMiddleware('Viewer'), async (req: AuthenticatedRequest
   const { orgId } = req.params;
 
   try {
-    const stmt = db.prepare(`
-      SELECT id, name, industry, size, created_at, updated_at 
-      FROM organizations 
-      WHERE id = ?
-    `);
-    const org = stmt.get(orgId);
+    const org = await db.getOrganizationById(orgId);
 
     if (!org) {
       return res.status(404).json({ error: 'Organization not found' });
@@ -48,14 +43,7 @@ router.get('/:orgId/members', rbacMiddleware('Viewer'), async (req: Authenticate
   const { orgId } = req.params;
 
   try {
-    const stmt = db.prepare(`
-      SELECT u.id as userId, u.full_name, u.email, tm.role, tm.joined_at
-      FROM users u
-      JOIN team_members tm ON u.id = tm.user_id 
-      WHERE tm.org_id = ?
-      ORDER BY tm.joined_at ASC
-    `);
-    const members = stmt.all(orgId);
+    const members = await db.getTeamMembersByOrgId(orgId);
 
     // Log audit event
     await logAuditEvent({
@@ -88,12 +76,7 @@ router.post('/:orgId/invites', rbacMiddleware('Admin'), async (req: Authenticate
 
   try {
     // Check if user already exists and is member of org
-    const existingStmt = db.prepare(`
-      SELECT tm.id FROM team_members tm
-      JOIN users u ON tm.user_id = u.id
-      WHERE u.email = ? AND tm.org_id = ?
-    `);
-    const existingMember = existingStmt.get(email.toLowerCase(), orgId);
+    const existingMember = await db.getTeamMemberByEmailAndOrg(email.toLowerCase(), orgId);
 
     if (existingMember) {
       return res.status(400).json({ error: 'User is already a member of this organization' });
@@ -101,13 +84,16 @@ router.post('/:orgId/invites', rbacMiddleware('Admin'), async (req: Authenticate
 
     // Generate secure invite code
     const inviteCode = crypto.randomBytes(16).toString('hex');
-    const expiresAt = Math.floor(Date.now() / 1000) + (expiresInDays * 24 * 60 * 60);
+    const expiresAt = new Date(Date.now() + (expiresInDays * 24 * 60 * 60 * 1000));
 
-    const stmt = db.prepare(`
-      INSERT INTO invites (id, org_id, email, code, role, expires_at) 
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-    stmt.run(uuidv4(), orgId, email.toLowerCase(), inviteCode, role, expiresAt);
+    await db.createInvite({
+      id: uuidv4(),
+      orgId,
+      email: email.toLowerCase(),
+      code: inviteCode,
+      role,
+      expiresAt
+    });
 
     // Log audit event
     await logAuditEvent({
@@ -137,14 +123,7 @@ router.get('/:orgId/invites', rbacMiddleware('Admin'), async (req: Authenticated
   const { orgId } = req.params;
 
   try {
-    const stmt = db.prepare(`
-      SELECT id, email, role, code, expires_at, created_at, used_at
-      FROM invites 
-      WHERE org_id = ?
-      ORDER BY created_at DESC
-    `);
-    const invites = stmt.all(orgId);
-
+    const invites = await db.getInvitesByOrgId(orgId);
     res.json(invites);
   } catch (err) {
     console.error(err);
@@ -157,13 +136,9 @@ router.delete('/:orgId/invites/:inviteId', rbacMiddleware('Admin'), async (req: 
   const { orgId, inviteId } = req.params;
 
   try {
-    const stmt = db.prepare(`
-      DELETE FROM invites 
-      WHERE id = ? AND org_id = ?
-    `);
-    const result = stmt.run(inviteId, orgId);
+    const result = await db.deleteInviteById(inviteId, orgId);
 
-    if (result.changes === 0) {
+    if (result === 0) {
       return res.status(404).json({ error: 'Invite not found' });
     }
 
@@ -199,20 +174,11 @@ router.put('/:orgId/members/:userId/role', rbacMiddleware('Admin'), async (req: 
   }
 
   try {
-    const stmt = db.prepare(`
-      UPDATE team_members 
-      SET role = ? 
-      WHERE user_id = ? AND org_id = ?
-    `);
-    const result = stmt.run(role, userId, orgId);
-
-    if (result.changes === 0) {
-      return res.status(404).json({ error: 'Team member not found' });
-    }
+    // Update team member role
+    await db.updateTeamMemberRole(userId, orgId, role);
 
     // Get user info for audit log
-    const userStmt = db.prepare(`SELECT full_name, email FROM users WHERE id = ?`);
-    const user = userStmt.get(userId) as any;
+    const user = await db.getUserById(userId);
 
     // Log audit event
     await logAuditEvent({
@@ -242,27 +208,15 @@ router.delete('/:orgId/members/:userId', rbacMiddleware('Admin'), async (req: Au
 
   try {
     // Get user info before deletion for audit log
-    const userStmt = db.prepare(`
-      SELECT u.full_name, u.email, tm.role 
-      FROM users u
-      JOIN team_members tm ON u.id = tm.user_id
-      WHERE u.id = ? AND tm.org_id = ?
-    `);
-    const user = userStmt.get(userId, orgId) as any;
+    const user = await db.getUserById(userId);
+    const teamMember = await db.getTeamMemberByUserAndOrg(userId, orgId);
 
-    if (!user) {
+    if (!user || !teamMember) {
       return res.status(404).json({ error: 'Team member not found' });
     }
 
-    const stmt = db.prepare(`
-      DELETE FROM team_members 
-      WHERE user_id = ? AND org_id = ?
-    `);
-    const result = stmt.run(userId, orgId);
-
-    if (result.changes === 0) {
-      return res.status(404).json({ error: 'Team member not found' });
-    }
+    // Remove the team member
+    await db.removeTeamMember(userId, orgId);
 
     // Log audit event
     await logAuditEvent({
@@ -329,35 +283,22 @@ router.get('/:orgId/audit-logs', rbacMiddleware('Admin'), async (req: Authentica
       paramIndex++;
     }
 
-    const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
-
-    // Get total count
-    const countStmt = db.prepare(`
-      SELECT COUNT(*) as count FROM audit_logs ${whereSQL}
-    `);
-    const totalCount = (countStmt.get(...params) as { count: number }).count;
-
-    // Fetch page data ordered by most recent
-    const logsStmt = db.prepare(`
-      SELECT al.id, al.user_id, al.org_id, al.action, al.ip_address, 
-             al.user_agent, al.metadata, al.created_at, u.full_name, u.email
-      FROM audit_logs al
-      LEFT JOIN users u ON al.user_id = u.id
-      ${whereSQL}
-      ORDER BY al.created_at DESC
-      LIMIT ? OFFSET ?
-    `);
-    const logs = logsStmt.all(...params, Number(limit), offset) as any[];
+    // Use the database abstraction layer for audit logs
+    const result = await db.getAuditLogsByOrg(orgId, {
+      page: Number(page),
+      limit: Number(limit),
+      filters: filterObj
+    });
 
     res.json({
       page: Number(page),
       limit: Number(limit),
-      totalCount,
-      totalPages: Math.ceil(totalCount / Number(limit)),
-      logs: logs.map((log: any) => ({
+      totalCount: result.totalCount,
+      totalPages: Math.ceil(result.totalCount / Number(limit)),
+      logs: result.logs.map((log: any) => ({
         ...log,
-        metadata: log.metadata ? JSON.parse(log.metadata) : null,
-        created_at: new Date(log.created_at * 1000).toISOString()
+        metadata: typeof log.metadata === 'string' ? JSON.parse(log.metadata) : log.metadata,
+        created_at: log.created_at
       }))
     });
   } catch (err) {
