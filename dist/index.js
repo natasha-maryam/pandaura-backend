@@ -10,7 +10,6 @@ const helmet_1 = __importDefault(require("helmet"));
 const database_adapter_1 = require("./db/database-adapter");
 const auth_1 = __importDefault(require("./routes/auth"));
 const orgs_1 = __importDefault(require("./routes/orgs"));
-const test_1 = __importDefault(require("./routes/test"));
 const app = (0, express_1.default)();
 const port = process.env.PORT || 5000;
 // Security middleware
@@ -62,7 +61,6 @@ app.set('trust proxy', true);
 // Routes
 app.use('/api/v1/auth', auth_1.default);
 app.use('/api/v1/orgs', orgs_1.default);
-app.use('/api/v1/test', test_1.default);
 app.get('/', (req, res) => {
     res.json({
         message: 'Pandaura AS Backend API',
