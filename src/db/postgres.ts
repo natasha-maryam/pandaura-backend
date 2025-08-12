@@ -1,12 +1,34 @@
 import { Pool } from 'pg';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
 const pool = new Pool({
   connectionString: process.env.POSTGRES_URL, // Use Railway Postgres connection string
   ssl: { rejectUnauthorized: false } // Needed for Railway's SSL requirement
 });
 
+// Initialize PostgreSQL database with proper schema
+async function initializeTables() {
+  try {
+    console.log('🐘 Initializing PostgreSQL database schema...');
+    
+    // Read and execute the PostgreSQL setup SQL
+    const schemaPath = join(__dirname, '../../migrations/postgresql-setup.sql');
+    const schemaSql = readFileSync(schemaPath, 'utf-8');
+    
+    await pool.query(schemaSql);
+    
+    console.log('✅ PostgreSQL database schema initialized successfully');
+  } catch (error) {
+    console.error('❌ Error initializing PostgreSQL schema:', error);
+    throw error;
+  }
+}
+
 // Database connection using pg Pool
 export const db = {
+  // Add initialization function
+  initializeTables,
   // User operations
   async createUser(userData: {
     id: string;
@@ -147,101 +169,6 @@ export const db = {
     return result.rows[0];
   },
 
-  // Utility operations
-  async initializeTables() {
-    try {
-      // Create users table
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS users (
-          id TEXT PRIMARY KEY,
-          email TEXT UNIQUE NOT NULL,
-          password_hash TEXT NOT NULL,
-          first_name TEXT DEFAULT '',
-          last_name TEXT DEFAULT '',
-          role TEXT DEFAULT 'user',
-          is_active BOOLEAN DEFAULT true,
-          email_verified BOOLEAN DEFAULT false,
-          totp_secret TEXT,
-          totp_enabled BOOLEAN DEFAULT false,
-          created_at TIMESTAMP DEFAULT NOW(),
-          updated_at TIMESTAMP DEFAULT NOW()
-        )
-      `);
-
-      // Create device_bindings table
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS device_bindings (
-          id TEXT PRIMARY KEY,
-          user_id TEXT NOT NULL,
-          device_fingerprint TEXT NOT NULL,
-          ip_address TEXT NOT NULL,
-          user_agent TEXT NOT NULL,
-          totp_secret TEXT NOT NULL,
-          is_verified BOOLEAN DEFAULT false,
-          last_used TIMESTAMP DEFAULT NOW(),
-          created_at TIMESTAMP DEFAULT NOW(),
-          updated_at TIMESTAMP DEFAULT NOW(),
-          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-          UNIQUE(user_id, device_fingerprint)
-        )
-      `);
-
-      // Create activity_log table
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS activity_log (
-          id TEXT PRIMARY KEY,
-          user_id TEXT,
-          action TEXT NOT NULL,
-          ip_address TEXT NOT NULL,
-          user_agent TEXT NOT NULL,
-          success BOOLEAN NOT NULL,
-          details JSONB DEFAULT '{}',
-          created_at TIMESTAMP DEFAULT NOW(),
-          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
-        )
-      `);
-
-      // Create organizations table
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS organizations (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          created_at TIMESTAMP DEFAULT NOW(),
-          updated_at TIMESTAMP DEFAULT NOW()
-        )
-      `);
-
-      // Create invites table
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS invites (
-          id TEXT PRIMARY KEY,
-          email TEXT NOT NULL,
-          token TEXT NOT NULL,
-          created_at TIMESTAMP DEFAULT NOW(),
-          updated_at TIMESTAMP DEFAULT NOW()
-        )
-      `);
-
-      // Create team_members table
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS team_members (
-          id TEXT PRIMARY KEY,
-          user_id TEXT NOT NULL,
-          organization_id TEXT NOT NULL,
-          role TEXT NOT NULL,
-          created_at TIMESTAMP DEFAULT NOW(),
-          updated_at TIMESTAMP DEFAULT NOW(),
-          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-          FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
-        )
-      `);
-      
-      console.log('Database tables initialized successfully');
-    } catch (error) {
-      console.error('Error initializing database tables:', error);
-      throw error;
-    }
-  }
 };
 
 export default db;
