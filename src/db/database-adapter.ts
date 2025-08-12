@@ -8,7 +8,37 @@ export async function initializeTables() {
     if (process.env.VERCEL || process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production') {
       // Use PostgreSQL in production (Vercel or Railway)
       console.log('Initializing PostgreSQL tables...');
-      await postgresDB.initializeTables();
+      
+      try {
+        await postgresDB.initializeTables();
+      } catch (error: any) {
+        console.error('PostgreSQL initialization failed:', error?.message || error);
+        
+        // If this is the first deployment, the schema might not exist
+        if (error?.message?.includes('does not exist') || error?.message?.includes('relation')) {
+          console.log('🔄 Attempting schema deployment...');
+          
+          // Try to run the Vercel schema deployment
+          try {
+            if (process.env.VERCEL) {
+              const { deployVercelSchema } = require('../../vercel-deploy-schema.js');
+              await deployVercelSchema();
+              console.log('✅ Schema deployed successfully, retrying initialization...');
+              await postgresDB.initializeTables();
+            } else {
+              const { deploySchema } = require('../../deploy-schema.js');
+              await deploySchema();
+              console.log('✅ Schema deployed successfully, retrying initialization...');
+              await postgresDB.initializeTables();
+            }
+          } catch (deployError: any) {
+            console.error('❌ Schema deployment also failed:', deployError?.message || deployError);
+            throw new Error(`Database initialization failed: ${error?.message || error}. Schema deployment failed: ${deployError?.message || deployError}`);
+          }
+        } else {
+          throw error;
+        }
+      }
     } else {
       // Use SQLite for local development
       console.log('Initializing SQLite tables...');
