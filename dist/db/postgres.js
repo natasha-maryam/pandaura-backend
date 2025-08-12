@@ -12,29 +12,14 @@ const pool = new pg_1.Pool({
 async function initializeTables() {
     try {
         console.log('🐘 Initializing PostgreSQL database schema...');
-        console.log('📍 Current directory:', __dirname);
         // Read and execute the PostgreSQL setup SQL
         const schemaPath = (0, path_1.join)(__dirname, '../../migrations/postgresql-setup.sql');
-        console.log('📄 Schema path:', schemaPath);
         const schemaSql = (0, fs_1.readFileSync)(schemaPath, 'utf-8');
-        console.log('📝 Schema SQL length:', schemaSql.length, 'characters');
-        // Execute the schema as a single transaction
-        await pool.query('BEGIN');
         await pool.query(schemaSql);
-        await pool.query('COMMIT');
         console.log('✅ PostgreSQL database schema initialized successfully');
-        // Verify tables were created
-        const tablesResult = await pool.query(`
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public'
-      ORDER BY table_name
-    `);
-        console.log('📊 Tables created:', tablesResult.rows.map(r => r.table_name).join(', '));
     }
     catch (error) {
         console.error('❌ Error initializing PostgreSQL schema:', error);
-        await pool.query('ROLLBACK');
         throw error;
     }
 }

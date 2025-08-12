@@ -75,7 +75,7 @@ CREATE TABLE device_bindings (
 -- Temporary device bindings for signup flow
 CREATE TABLE temp_device_bindings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  email TEXT NOT NULL UNIQUE,  -- Add unique constraint for ON CONFLICT
+  email TEXT NOT NULL,
   instance_id TEXT NOT NULL,
   device_fingerprint_hash TEXT NOT NULL,
   is_org_creator BOOLEAN DEFAULT FALSE,
