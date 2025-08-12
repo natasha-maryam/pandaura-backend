@@ -8,6 +8,7 @@ import { initializeTables } from './db/database-adapter';
 import authRoutes from './routes/auth';
 import orgRoutes from './routes/orgs';
 import testRoutes from './routes/test';
+import projectsRoutes from './routes/projects';
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -71,6 +72,7 @@ initializeTables().catch(console.error);
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/orgs', orgRoutes);
 app.use('/api/v1/test', testRoutes);
+app.use('/api/v1/projects', projectsRoutes);
 
 app.get('/', (req, res) => {
   res.json({ 
@@ -80,6 +82,7 @@ app.get('/', (req, res) => {
     endpoints: {
       auth: '/api/v1/auth',
       organizations: '/api/v1/orgs',
+      projects: '/api/v1/projects',
       test: '/api/v1/test'
     }
   });
