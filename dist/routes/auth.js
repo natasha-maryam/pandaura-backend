@@ -25,29 +25,26 @@ router.post('/orgs', async (req, res) => {
     try {
         // Create org
         const orgId = (0, uuid_1.v4)();
-        await database_adapter_1.db.createOrganization({
-            id: orgId,
-            name: orgName,
-            industry,
-            size
-        });
+        const orgStmt = database_adapter_1.db.prepare(`
+      INSERT INTO organizations (id, name, industry, size) 
+      VALUES (?, ?, ?, ?)
+    `);
+        orgStmt.run(orgId, orgName, industry, size);
         // Hash password
         const passwordHash = await argon2_1.default.hash(password);
         // Create user
         const userId = (0, uuid_1.v4)();
-        await database_adapter_1.db.createUser({
-            id: userId,
-            fullName,
-            email: email.toLowerCase(),
-            passwordHash
-        });
+        const userStmt = database_adapter_1.db.prepare(`
+      INSERT INTO users (id, full_name, email, password_hash) 
+      VALUES (?, ?, ?, ?)
+    `);
+        userStmt.run(userId, fullName, email.toLowerCase(), passwordHash);
         // Add user as admin member to org
-        await database_adapter_1.db.createTeamMember({
-            id: (0, uuid_1.v4)(),
-            userId,
-            orgId,
-            role: 'Admin'
-        });
+        const memberStmt = database_adapter_1.db.prepare(`
+      INSERT INTO team_members (id, user_id, org_id, role) 
+      VALUES (?, ?, ?, 'Admin')
+    `);
+        memberStmt.run((0, uuid_1.v4)(), userId, orgId);
         // Bind any temporary devices from signup flow
         await bindTempDevices(userId, email);
         // Log audit event
@@ -81,16 +78,20 @@ router.get('/invites/validate', async (req, res) => {
         return res.status(400).json({ error: 'Invite code required' });
     }
     try {
-        const invite = await database_adapter_1.db.getValidInviteByCode(code);
+        const stmt = database_adapter_1.db.prepare(`
+      SELECT i.*, o.name as org_name 
+      FROM invites i 
+      JOIN organizations o ON i.org_id = o.id
+      WHERE i.code = ? AND i.expires_at > ? AND i.used_at IS NULL
+    `);
+        const invite = stmt.get(code, Math.floor(Date.now() / 1000));
         if (!invite) {
             return res.status(400).json({ error: 'Invalid or expired invite code' });
         }
-        // Get organization name
-        const org = await database_adapter_1.db.getOrganizationById(invite.org_id);
         res.json({
             valid: true,
             orgId: invite.org_id,
-            orgName: org?.name || 'Unknown Organization',
+            orgName: invite.org_name,
             role: invite.role,
             email: invite.email
         });
@@ -108,29 +109,37 @@ router.post('/invites/accept', async (req, res) => {
     }
     try {
         // Validate invite code
-        const invite = await database_adapter_1.db.getValidInviteByCode(code);
+        const inviteStmt = database_adapter_1.db.prepare(`
+      SELECT * FROM invites 
+      WHERE code = ? AND expires_at > ? AND used_at IS NULL
+    `);
+        const invite = inviteStmt.get(code, Math.floor(Date.now() / 1000));
         if (!invite) {
             return res.status(400).json({ error: 'Invalid or expired invite code' });
         }
+        // Remove the email validation check - allow user to use any email
+        // The invite is still tied to the original email for audit purposes
+        // but the user can create their account with a different email
         // Hash password
         const passwordHash = await argon2_1.default.hash(password);
         // Create user
         const userId = (0, uuid_1.v4)();
-        await database_adapter_1.db.createUser({
-            id: userId,
-            fullName,
-            email: email.toLowerCase(),
-            passwordHash
-        });
+        const userStmt = database_adapter_1.db.prepare(`
+      INSERT INTO users (id, full_name, email, password_hash) 
+      VALUES (?, ?, ?, ?)
+    `);
+        userStmt.run(userId, fullName, email.toLowerCase(), passwordHash);
         // Add user to org with role from invite
-        await database_adapter_1.db.createTeamMember({
-            id: (0, uuid_1.v4)(),
-            userId,
-            orgId: invite.org_id,
-            role: invite.role
-        });
+        const memberStmt = database_adapter_1.db.prepare(`
+      INSERT INTO team_members (id, user_id, org_id, role) 
+      VALUES (?, ?, ?, ?)
+    `);
+        memberStmt.run((0, uuid_1.v4)(), userId, invite.org_id, invite.role);
         // Mark invite as used
-        await database_adapter_1.db.markInviteAsUsed(invite.id);
+        const updateStmt = database_adapter_1.db.prepare(`
+      UPDATE invites SET used_at = ? WHERE id = ?
+    `);
+        updateStmt.run(Math.floor(Date.now() / 1000), invite.id);
         // Bind any temporary devices from signup flow
         await bindTempDevices(userId, email);
         // Log audit event
@@ -170,29 +179,28 @@ router.post('/invites/generate', async (req, res) => {
     }
     try {
         // Verify organization exists
-        const org = await database_adapter_1.db.getOrganizationById(orgId);
+        const orgStmt = database_adapter_1.db.prepare('SELECT name FROM organizations WHERE id = ?');
+        const org = orgStmt.get(orgId);
         if (!org) {
             return res.status(404).json({ error: 'Organization not found' });
         }
         // Generate invite code and calculate expiration
         const code = generateInviteCode();
-        const expiresAt = new Date(Date.now() + (expiresInDays * 24 * 60 * 60 * 1000));
+        const expiresAt = Math.floor(Date.now() / 1000) + (expiresInDays * 24 * 60 * 60);
         // Create invite
-        await database_adapter_1.db.createInvite({
-            id: (0, uuid_1.v4)(),
-            orgId,
-            email: email.toLowerCase(),
-            code,
-            role,
-            expiresAt
-        });
+        const inviteStmt = database_adapter_1.db.prepare(`
+      INSERT INTO invites (id, org_id, email, code, role, expires_at) 
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+        const inviteId = (0, uuid_1.v4)();
+        inviteStmt.run(inviteId, orgId, email.toLowerCase(), code, role, expiresAt);
         res.json({
             message: 'Invite generated successfully',
             inviteCode: code,
             orgName: org.name,
             email: email.toLowerCase(),
             role,
-            expiresAt: expiresAt.getTime(),
+            expiresAt,
             inviteLink: `${req.protocol}://${req.get('host')}/signup?invite=${code}`
         });
     }
@@ -210,7 +218,10 @@ router.post('/setup-2fa', authMiddleware_1.authenticateToken, async (req, res) =
             issuer: 'Pandaura AS'
         });
         // Save secret to user for later verification
-        await database_adapter_1.db.updateUserTotpSecret(req.user.userId, secret.base32);
+        const stmt = database_adapter_1.db.prepare(`
+      UPDATE users SET totp_secret = ? WHERE id = ?
+    `);
+        stmt.run(secret.base32, req.user.userId);
         // Log audit event
         await (0, auditLogger_1.logAuditEvent)({
             userId: req.user.userId,
@@ -235,7 +246,8 @@ router.post('/verify-2fa', authMiddleware_1.authenticateToken, async (req, res) 
         return res.status(400).json({ error: 'Missing 2FA token' });
     }
     try {
-        const user = await database_adapter_1.db.getUserById(req.user.userId);
+        const stmt = database_adapter_1.db.prepare(`SELECT totp_secret FROM users WHERE id = ?`);
+        const user = stmt.get(req.user.userId);
         if (!user || !user.totp_secret) {
             return res.status(404).json({ error: 'User not found or 2FA not set up' });
         }
@@ -255,9 +267,11 @@ router.post('/verify-2fa', authMiddleware_1.authenticateToken, async (req, res) 
             });
             return res.status(400).json({ error: 'Invalid 2FA token' });
         }
-        // Enable 2FA for user (need to add this field to database abstraction)
-        // For now, we'll skip this step as it requires a database schema change
-        // await db.updateUser2FAStatus(req.user!.userId, true);
+        // Enable 2FA for user
+        const updateStmt = database_adapter_1.db.prepare(`
+      UPDATE users SET two_factor_enabled = 1 WHERE id = ?
+    `);
+        updateStmt.run(req.user.userId);
         // Log successful verification
         await (0, auditLogger_1.logAuditEvent)({
             userId: req.user.userId,
@@ -279,12 +293,11 @@ router.post('/device-bind', authMiddleware_1.authenticateToken, async (req, res)
         return res.status(400).json({ error: 'Missing device binding info' });
     }
     try {
-        await database_adapter_1.db.createDeviceBinding({
-            id: (0, uuid_1.v4)(),
-            userId: req.user.userId,
-            instanceId,
-            deviceFingerprintHash
-        });
+        const stmt = database_adapter_1.db.prepare(`
+      INSERT OR REPLACE INTO device_bindings (id, user_id, instance_id, device_fingerprint_hash) 
+      VALUES (?, ?, ?, ?)
+    `);
+        stmt.run((0, uuid_1.v4)(), req.user.userId, instanceId, deviceFingerprintHash);
         // Log audit event
         await (0, auditLogger_1.logAuditEvent)({
             userId: req.user.userId,
@@ -311,14 +324,14 @@ router.post('/signup-device-bind', async (req, res) => {
         if (!signupToken.startsWith('temp-signup-')) {
             return res.status(400).json({ error: 'Invalid signup token' });
         }
-        // Store the device info temporarily
-        await database_adapter_1.db.createTempDeviceBinding({
-            id: (0, uuid_1.v4)(),
-            email: email.toLowerCase(),
-            instanceId,
-            deviceFingerprintHash: fingerprint,
-            isOrgCreator: isOrgCreator || false
-        });
+        // For now, we'll store the device info temporarily
+        // Later when user completes signup, we'll bind it properly
+        const tempId = (0, uuid_1.v4)();
+        const stmt = database_adapter_1.db.prepare(`
+      INSERT OR REPLACE INTO temp_device_bindings (id, email, instance_id, device_fingerprint_hash, is_org_creator, created_at) 
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+        stmt.run(tempId, email.toLowerCase(), instanceId, fingerprint, isOrgCreator ? 1 : 0, Math.floor(Date.now() / 1000));
         // Log audit event (without userId since not authenticated yet)
         await (0, auditLogger_1.logAuditEvent)({
             action: `Temporary device binding during signup (org creator: ${isOrgCreator})`,
@@ -337,19 +350,23 @@ router.post('/signup-device-bind', async (req, res) => {
 async function bindTempDevices(userId, email) {
     try {
         // Get temp device bindings for this email
-        const tempBindings = await database_adapter_1.db.getTempDeviceBindingsByEmail(email.toLowerCase());
+        const tempStmt = database_adapter_1.db.prepare(`
+      SELECT * FROM temp_device_bindings 
+      WHERE email = ? AND expires_at > ?
+    `);
+        const tempBindings = tempStmt.all(email.toLowerCase(), Math.floor(Date.now() / 1000));
         if (tempBindings.length > 0) {
             // Transfer to permanent device bindings
+            const bindStmt = database_adapter_1.db.prepare(`
+        INSERT OR REPLACE INTO device_bindings (id, user_id, instance_id, device_fingerprint_hash) 
+        VALUES (?, ?, ?, ?)
+      `);
             for (const temp of tempBindings) {
-                await database_adapter_1.db.createDeviceBinding({
-                    id: (0, uuid_1.v4)(),
-                    userId,
-                    instanceId: temp.instance_id,
-                    deviceFingerprintHash: temp.device_fingerprint_hash
-                });
+                bindStmt.run((0, uuid_1.v4)(), userId, temp.instance_id, temp.device_fingerprint_hash);
             }
             // Clean up temp bindings
-            await database_adapter_1.db.deleteTempDeviceBindingsByEmail(email.toLowerCase());
+            const deleteStmt = database_adapter_1.db.prepare(`DELETE FROM temp_device_bindings WHERE email = ?`);
+            deleteStmt.run(email.toLowerCase());
             console.log(`Bound ${tempBindings.length} temporary devices for user ${userId}`);
         }
     }
@@ -364,7 +381,11 @@ router.post('/login', async (req, res) => {
         return res.status(400).json({ error: 'Email and password required' });
     }
     try {
-        const user = await database_adapter_1.db.getUserByEmail(email.toLowerCase());
+        const userStmt = database_adapter_1.db.prepare(`
+      SELECT * FROM users 
+      WHERE email = ? AND is_active = 1
+    `);
+        const user = userStmt.get(email.toLowerCase());
         if (!user) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
@@ -380,8 +401,8 @@ router.post('/login', async (req, res) => {
             });
             return res.status(401).json({ error: 'Invalid credentials' });
         }
-        // Check 2FA if enabled (Note: two_factor_enabled field needs to be added to schema)
-        if (user.totp_secret) {
+        // Check 2FA if enabled
+        if (user.two_factor_enabled && user.totp_secret) {
             if (!twoFactorToken) {
                 return res.status(200).json({
                     requiresTwoFactor: true,
@@ -407,7 +428,13 @@ router.post('/login', async (req, res) => {
             }
         }
         // Fetch user's organizations & roles
-        const userOrgs = await database_adapter_1.db.getUserOrganizations(user.id);
+        const orgsStmt = database_adapter_1.db.prepare(`
+      SELECT tm.org_id, tm.role, o.name as org_name 
+      FROM team_members tm 
+      JOIN organizations o ON tm.org_id = o.id
+      WHERE tm.user_id = ?
+    `);
+        const userOrgs = orgsStmt.all(user.id);
         if (userOrgs.length === 0) {
             return res.status(403).json({ error: 'No organization membership found' });
         }
@@ -431,9 +458,9 @@ router.post('/login', async (req, res) => {
         res.json({
             token,
             userId: user.id,
-            fullName: user.full_name,
+            fullName: user.full_name, // Add user's full name
             email: user.email,
-            twoFactorEnabled: !!user.totp_secret,
+            twoFactorEnabled: user.two_factor_enabled,
             orgId: primaryOrg.org_id,
             role: primaryOrg.role,
             orgName: primaryOrg.org_name,
@@ -454,7 +481,13 @@ router.get('/users/:userId/orgs', authMiddleware_1.authenticateToken, async (req
         return res.status(403).json({ error: 'Access denied' });
     }
     try {
-        const orgs = await database_adapter_1.db.getUserOrganizations(userId);
+        const stmt = database_adapter_1.db.prepare(`
+      SELECT tm.org_id, tm.role, o.name as org_name, o.industry, o.size
+      FROM team_members tm 
+      JOIN organizations o ON tm.org_id = o.id
+      WHERE tm.user_id = ?
+    `);
+        const orgs = stmt.all(userId);
         res.json(orgs);
     }
     catch (err) {

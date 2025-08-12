@@ -17,7 +17,12 @@ router.use(authMiddleware_1.authenticateToken);
 router.get('/:orgId', (0, rbacMiddleware_1.rbacMiddleware)('Viewer'), async (req, res) => {
     const { orgId } = req.params;
     try {
-        const org = await database_adapter_1.db.getOrganizationById(orgId);
+        const stmt = database_adapter_1.db.prepare(`
+      SELECT id, name, industry, size, created_at, updated_at 
+      FROM organizations 
+      WHERE id = ?
+    `);
+        const org = stmt.get(orgId);
         if (!org) {
             return res.status(404).json({ error: 'Organization not found' });
         }
@@ -40,7 +45,14 @@ router.get('/:orgId', (0, rbacMiddleware_1.rbacMiddleware)('Viewer'), async (req
 router.get('/:orgId/members', (0, rbacMiddleware_1.rbacMiddleware)('Viewer'), async (req, res) => {
     const { orgId } = req.params;
     try {
-        const members = await database_adapter_1.db.getTeamMembersByOrgId(orgId);
+        const stmt = database_adapter_1.db.prepare(`
+      SELECT u.id as userId, u.full_name, u.email, tm.role, tm.joined_at
+      FROM users u
+      JOIN team_members tm ON u.id = tm.user_id 
+      WHERE tm.org_id = ?
+      ORDER BY tm.joined_at ASC
+    `);
+        const members = stmt.all(orgId);
         // Log audit event
         await (0, auditLogger_1.logAuditEvent)({
             userId: req.user.userId,
@@ -68,21 +80,23 @@ router.post('/:orgId/invites', (0, rbacMiddleware_1.rbacMiddleware)('Admin'), as
     }
     try {
         // Check if user already exists and is member of org
-        const existingMember = await database_adapter_1.db.getTeamMemberByEmailAndOrg(email.toLowerCase(), orgId);
+        const existingStmt = database_adapter_1.db.prepare(`
+      SELECT tm.id FROM team_members tm
+      JOIN users u ON tm.user_id = u.id
+      WHERE u.email = ? AND tm.org_id = ?
+    `);
+        const existingMember = existingStmt.get(email.toLowerCase(), orgId);
         if (existingMember) {
             return res.status(400).json({ error: 'User is already a member of this organization' });
         }
         // Generate secure invite code
         const inviteCode = crypto_1.default.randomBytes(16).toString('hex');
-        const expiresAt = new Date(Date.now() + (expiresInDays * 24 * 60 * 60 * 1000));
-        await database_adapter_1.db.createInvite({
-            id: (0, uuid_1.v4)(),
-            orgId,
-            email: email.toLowerCase(),
-            code: inviteCode,
-            role,
-            expiresAt
-        });
+        const expiresAt = Math.floor(Date.now() / 1000) + (expiresInDays * 24 * 60 * 60);
+        const stmt = database_adapter_1.db.prepare(`
+      INSERT INTO invites (id, org_id, email, code, role, expires_at) 
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+        stmt.run((0, uuid_1.v4)(), orgId, email.toLowerCase(), inviteCode, role, expiresAt);
         // Log audit event
         await (0, auditLogger_1.logAuditEvent)({
             userId: req.user.userId,
@@ -109,7 +123,13 @@ router.post('/:orgId/invites', (0, rbacMiddleware_1.rbacMiddleware)('Admin'), as
 router.get('/:orgId/invites', (0, rbacMiddleware_1.rbacMiddleware)('Admin'), async (req, res) => {
     const { orgId } = req.params;
     try {
-        const invites = await database_adapter_1.db.getInvitesByOrgId(orgId);
+        const stmt = database_adapter_1.db.prepare(`
+      SELECT id, email, role, code, expires_at, created_at, used_at
+      FROM invites 
+      WHERE org_id = ?
+      ORDER BY created_at DESC
+    `);
+        const invites = stmt.all(orgId);
         res.json(invites);
     }
     catch (err) {
@@ -121,8 +141,12 @@ router.get('/:orgId/invites', (0, rbacMiddleware_1.rbacMiddleware)('Admin'), asy
 router.delete('/:orgId/invites/:inviteId', (0, rbacMiddleware_1.rbacMiddleware)('Admin'), async (req, res) => {
     const { orgId, inviteId } = req.params;
     try {
-        const result = await database_adapter_1.db.deleteInviteById(inviteId, orgId);
-        if (result === 0) {
+        const stmt = database_adapter_1.db.prepare(`
+      DELETE FROM invites 
+      WHERE id = ? AND org_id = ?
+    `);
+        const result = stmt.run(inviteId, orgId);
+        if (result.changes === 0) {
             return res.status(404).json({ error: 'Invite not found' });
         }
         // Log audit event
@@ -153,10 +177,18 @@ router.put('/:orgId/members/:userId/role', (0, rbacMiddleware_1.rbacMiddleware)(
         return res.status(400).json({ error: 'Cannot remove admin role from yourself' });
     }
     try {
-        // Update team member role
-        await database_adapter_1.db.updateTeamMemberRole(userId, orgId, role);
+        const stmt = database_adapter_1.db.prepare(`
+      UPDATE team_members 
+      SET role = ? 
+      WHERE user_id = ? AND org_id = ?
+    `);
+        const result = stmt.run(role, userId, orgId);
+        if (result.changes === 0) {
+            return res.status(404).json({ error: 'Team member not found' });
+        }
         // Get user info for audit log
-        const user = await database_adapter_1.db.getUserById(userId);
+        const userStmt = database_adapter_1.db.prepare(`SELECT full_name, email FROM users WHERE id = ?`);
+        const user = userStmt.get(userId);
         // Log audit event
         await (0, auditLogger_1.logAuditEvent)({
             userId: req.user.userId,
@@ -182,13 +214,24 @@ router.delete('/:orgId/members/:userId', (0, rbacMiddleware_1.rbacMiddleware)('A
     }
     try {
         // Get user info before deletion for audit log
-        const user = await database_adapter_1.db.getUserById(userId);
-        const teamMember = await database_adapter_1.db.getTeamMemberByUserAndOrg(userId, orgId);
-        if (!user || !teamMember) {
+        const userStmt = database_adapter_1.db.prepare(`
+      SELECT u.full_name, u.email, tm.role 
+      FROM users u
+      JOIN team_members tm ON u.id = tm.user_id
+      WHERE u.id = ? AND tm.org_id = ?
+    `);
+        const user = userStmt.get(userId, orgId);
+        if (!user) {
             return res.status(404).json({ error: 'Team member not found' });
         }
-        // Remove the team member
-        await database_adapter_1.db.removeTeamMember(userId, orgId);
+        const stmt = database_adapter_1.db.prepare(`
+      DELETE FROM team_members 
+      WHERE user_id = ? AND org_id = ?
+    `);
+        const result = stmt.run(userId, orgId);
+        if (result.changes === 0) {
+            return res.status(404).json({ error: 'Team member not found' });
+        }
         // Log audit event
         await (0, auditLogger_1.logAuditEvent)({
             userId: req.user.userId,
@@ -247,21 +290,32 @@ router.get('/:orgId/audit-logs', (0, rbacMiddleware_1.rbacMiddleware)('Admin'), 
             params.push(Math.floor(new Date(filterObj.endDate).getTime() / 1000));
             paramIndex++;
         }
-        // Use the database abstraction layer for audit logs
-        const result = await database_adapter_1.db.getAuditLogsByOrg(orgId, {
-            page: Number(page),
-            limit: Number(limit),
-            filters: filterObj
-        });
+        const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
+        // Get total count
+        const countStmt = database_adapter_1.db.prepare(`
+      SELECT COUNT(*) as count FROM audit_logs ${whereSQL}
+    `);
+        const totalCount = countStmt.get(...params).count;
+        // Fetch page data ordered by most recent
+        const logsStmt = database_adapter_1.db.prepare(`
+      SELECT al.id, al.user_id, al.org_id, al.action, al.ip_address, 
+             al.user_agent, al.metadata, al.created_at, u.full_name, u.email
+      FROM audit_logs al
+      LEFT JOIN users u ON al.user_id = u.id
+      ${whereSQL}
+      ORDER BY al.created_at DESC
+      LIMIT ? OFFSET ?
+    `);
+        const logs = logsStmt.all(...params, Number(limit), offset);
         res.json({
             page: Number(page),
             limit: Number(limit),
-            totalCount: result.totalCount,
-            totalPages: Math.ceil(result.totalCount / Number(limit)),
-            logs: result.logs.map((log) => ({
+            totalCount,
+            totalPages: Math.ceil(totalCount / Number(limit)),
+            logs: logs.map((log) => ({
                 ...log,
-                metadata: typeof log.metadata === 'string' ? JSON.parse(log.metadata) : log.metadata,
-                created_at: log.created_at
+                metadata: log.metadata ? JSON.parse(log.metadata) : null,
+                created_at: new Date(log.created_at * 1000).toISOString()
             }))
         });
     }
