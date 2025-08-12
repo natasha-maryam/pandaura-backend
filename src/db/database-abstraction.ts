@@ -314,7 +314,7 @@ class SQLiteAdapter implements DatabaseAdapter {
       INSERT INTO audit_logs (id, user_id, org_id, action, ip_address, user_agent, metadata, created_at) 
       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
     `);
-    stmt.run(data.id, data.userId, data.orgId, data.action, data.ipAddress, data.userAgent, data.metadata ? JSON.stringify(data.metadata) : null);
+    stmt.run(data.id, data.userId, data.orgId, data.action, data.ipAddress, data.userAgent, JSON.stringify(data.metadata));
   }
   
   async getAuditLogsByOrg(orgId: string, options: {
@@ -571,7 +571,7 @@ class PostgreSQLAdapter implements DatabaseAdapter {
     await this.pool.query(
       `INSERT INTO audit_logs (id, user_id, org_id, action, ip_address, user_agent, metadata, created_at) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
-      [data.id, data.userId, data.orgId, data.action, data.ipAddress, data.userAgent, data.metadata || null]
+      [data.id, data.userId, data.orgId, data.action, data.ipAddress, data.userAgent, JSON.stringify(data.metadata)]
     );
   }
   
