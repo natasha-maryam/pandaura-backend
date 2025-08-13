@@ -12,6 +12,7 @@ const auth_1 = __importDefault(require("./routes/auth"));
 const orgs_1 = __importDefault(require("./routes/orgs"));
 const test_1 = __importDefault(require("./routes/test"));
 const projects_1 = __importDefault(require("./routes/projects"));
+const tags_1 = __importDefault(require("./routes/tags"));
 const app = (0, express_1.default)();
 const port = process.env.PORT || 5000;
 // Security middleware
@@ -65,6 +66,7 @@ app.use('/api/v1/auth', auth_1.default);
 app.use('/api/v1/orgs', orgs_1.default);
 app.use('/api/v1/test', test_1.default);
 app.use('/api/v1/projects', projects_1.default);
+app.use('/api/v1/tags', tags_1.default);
 app.get('/', (req, res) => {
     res.json({
         message: 'Pandaura AS Backend API',
@@ -74,6 +76,7 @@ app.get('/', (req, res) => {
             auth: '/api/v1/auth',
             organizations: '/api/v1/orgs',
             projects: '/api/v1/projects',
+            tags: '/api/v1/tags',
             test: '/api/v1/test'
         }
     });

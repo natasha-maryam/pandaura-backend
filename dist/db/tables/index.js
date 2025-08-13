@@ -6,6 +6,7 @@ const users_1 = require("./users");
 const deviceBindings_1 = require("./deviceBindings");
 const activityLog_1 = require("./activityLog");
 const projects_1 = require("./projects");
+const tags_1 = require("./tags");
 function initializeTables() {
     (0, users_1.createOrganizationsTable)();
     (0, users_1.createUsersTable)();
@@ -14,4 +15,5 @@ function initializeTables() {
     (0, deviceBindings_1.createDeviceBindingsTable)();
     (0, activityLog_1.createAuditLogsTable)();
     projects_1.ProjectsTable.initializeTable();
+    tags_1.TagsTable.initializeTable();
 }

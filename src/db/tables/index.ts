@@ -4,6 +4,7 @@ import { createUsersTable, createOrganizationsTable, createTeamMembersTable, cre
 import { createDeviceBindingsTable } from './deviceBindings';
 import { createAuditLogsTable } from './activityLog';
 import { ProjectsTable } from './projects';
+import { TagsTable } from './tags';
 
 export function initializeTables() {
   createOrganizationsTable();
@@ -13,4 +14,5 @@ export function initializeTables() {
   createDeviceBindingsTable();
   createAuditLogsTable();
   ProjectsTable.initializeTable();
+  TagsTable.initializeTable();
 }

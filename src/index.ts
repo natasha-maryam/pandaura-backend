@@ -9,6 +9,7 @@ import authRoutes from './routes/auth';
 import orgRoutes from './routes/orgs';
 import testRoutes from './routes/test';
 import projectsRoutes from './routes/projects';
+import tagsRoutes from './routes/tags';
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -73,6 +74,7 @@ app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/orgs', orgRoutes);
 app.use('/api/v1/test', testRoutes);
 app.use('/api/v1/projects', projectsRoutes);
+app.use('/api/v1/tags', tagsRoutes);
 
 app.get('/', (req, res) => {
   res.json({ 
@@ -83,6 +85,7 @@ app.get('/', (req, res) => {
       auth: '/api/v1/auth',
       organizations: '/api/v1/orgs',
       projects: '/api/v1/projects',
+      tags: '/api/v1/tags',
       test: '/api/v1/test'
     }
   });
