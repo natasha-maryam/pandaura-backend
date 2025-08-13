@@ -154,6 +154,8 @@ router.get('/', authenticateToken, async (req: AuthenticatedRequest, res) => {
 router.post('/', authenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.user?.userId;
+    
+  
     if (!userId) {
       return res.status(401).json({ error: 'User not authenticated' });
     }
@@ -171,7 +173,7 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res) => {
       tag_type,
       is_ai_generated
     } = req.body;
-
+  console.log("sdsa", {project_id})
     if (!project_id) {
       return res.status(400).json({ error: 'Project ID is required' });
     }

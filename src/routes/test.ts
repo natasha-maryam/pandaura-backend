@@ -64,7 +64,7 @@ router.get('/db', (req, res) => {
     const connectionTest = db.prepare('SELECT 1 as test').get() as { test: number };
     
     // Get table counts
-    const tables = ['users', 'organizations', 'team_members', 'invites', 'audit_logs', 'device_bindings'];
+    const tables = ['users', 'organizations', 'team_members', 'invites', 'audit_logs', 'device_bindings', 'projects', 'tags', 'project_tags'];
     const tableCounts: Record<string, number> = {};
     
     tables.forEach(table => {
@@ -147,7 +147,7 @@ router.get('/db/sample/:table', (req, res) => {
   const limit = parseInt(req.query.limit as string) || 5;
   
   // Security: only allow specific tables
-  const allowedTables = ['users', 'organizations', 'team_members', 'invites', 'audit_logs', 'device_bindings'];
+  const allowedTables = ['users', 'organizations', 'team_members', 'invites', 'audit_logs', 'device_bindings', 'projects', 'tags', 'project_tags'];
   
   if (!allowedTables.includes(table)) {
     return res.status(400).json({
@@ -171,6 +171,43 @@ router.get('/db/sample/:table', (req, res) => {
     res.status(500).json({
       status: 'error',
       message: (error as Error).message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// GET /test/table-check - Simple test endpoint to verify table access
+router.get('/table-check/:table', (req, res) => {
+  const { table } = req.params;
+  const allowedTables = ['users', 'organizations', 'team_members', 'invites', 'audit_logs', 'device_bindings', 'projects', 'tags', 'project_tags'];
+  
+  try {
+    if (!allowedTables.includes(table)) {
+      return res.json({
+        status: 'error',
+        message: `Table '${table}' not in allowed list`,
+        allowedTables,
+        requestedTable: table
+      });
+    }
+    
+    const count = db.prepare(`SELECT COUNT(*) as count FROM ${table}`).get() as { count: number };
+    const sample = db.prepare(`SELECT * FROM ${table} LIMIT 3`).all();
+    
+    res.json({
+      status: 'success',
+      table,
+      count: count.count,
+      sample,
+      allowedTables,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.json({
+      status: 'error',
+      table,
+      error: (error as Error).message,
+      allowedTables,
       timestamp: new Date().toISOString()
     });
   }
@@ -217,6 +254,180 @@ router.post('/generate-invite', async (req, res) => {
   } catch (err) {
     console.error('Error generating invite:', err);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /test/debug-data - Enhanced debug data endpoint for comprehensive table inspection (list all tables)
+router.get('/debug-data', async (req, res) => {
+  try {
+    // Security: define allowed tables for debugging
+    const allowedTables = [
+      'users', 
+      'organizations', 
+      'team_members', 
+      'invites', 
+      'audit_logs', 
+      'device_bindings',
+      'projects',
+      'tags',
+      'project_tags'
+    ];
+
+    const tableInfo: Record<string, any> = {};
+    
+    for (const tableName of allowedTables) {
+      try {
+        const countResult = db.prepare(`SELECT COUNT(*) as count FROM ${tableName}`).get() as { count: number };
+        const sampleResult = db.prepare(`SELECT * FROM ${tableName} LIMIT 1`).get();
+        
+        tableInfo[tableName] = {
+          count: countResult.count,
+          hasData: countResult.count > 0,
+          sampleFields: sampleResult ? Object.keys(sampleResult) : []
+        };
+      } catch (error) {
+        tableInfo[tableName] = {
+          count: 0,
+          hasData: false,
+          error: (error as Error).message,
+          sampleFields: []
+        };
+      }
+    }
+
+    return res.json({
+      status: 'success',
+      message: 'Available tables for debugging',
+      tables: tableInfo,
+      usage: 'Use /api/v1/test/debug-data/{table-name} to get specific table data',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Debug data error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: (error as Error).message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// GET /test/debug-data/:table - Enhanced debug data endpoint for specific table
+router.get('/debug-data/:table', async (req, res) => {
+  try {
+    const { table } = req.params;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const offset = parseInt(req.query.offset as string) || 0;
+    
+    // Security: define allowed tables for debugging
+    const allowedTables = [
+      'users', 
+      'organizations', 
+      'team_members', 
+      'invites', 
+      'audit_logs', 
+      'device_bindings',
+      'projects',
+      'tags',
+      'project_tags'
+    ];
+
+    // Validate table name
+    if (!allowedTables.includes(table)) {
+      return res.status(400).json({
+        status: 'error',
+        message: `Table '${table}' not allowed. Available tables: ${allowedTables.join(', ')}`,
+        allowedTables,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Get total count
+    const countResult = db.prepare(`SELECT COUNT(*) as count FROM ${table}`).get() as { count: number };
+    const totalCount = countResult.count;
+
+    // Get paginated data
+    const rows = db.prepare(`SELECT * FROM ${table} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(limit, offset);
+
+    // Get table schema information
+    const schemaInfo = db.prepare(`PRAGMA table_info(${table})`).all();
+
+    res.json({
+      status: 'success',
+      table,
+      totalCount,
+      returnedCount: rows.length,
+      limit,
+      offset,
+      hasMore: (offset + limit) < totalCount,
+      schema: schemaInfo,
+      data: rows,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Debug data error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: (error as Error).message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// GET /test/debug-data-all - Get all data from all tables (use with caution)
+router.get('/debug-data-all', async (req, res) => {
+  try {
+    const limitPerTable = parseInt(req.query.limit as string) || 5;
+    
+    const allowedTables = [
+      'users', 
+      'organizations', 
+      'team_members', 
+      'invites', 
+      'audit_logs', 
+      'device_bindings',
+      'projects',
+      'tags',
+      'project_tags'
+    ];
+
+    const allData: Record<string, any> = {};
+    
+    for (const table of allowedTables) {
+      try {
+        const rows = db.prepare(`SELECT * FROM ${table} ORDER BY created_at DESC LIMIT ?`).all(limitPerTable);
+        const countResult = db.prepare(`SELECT COUNT(*) as count FROM ${table}`).get() as { count: number };
+        
+        allData[table] = {
+          count: countResult.count,
+          sample: rows
+        };
+      } catch (error) {
+        allData[table] = {
+          count: 0,
+          error: (error as Error).message,
+          sample: []
+        };
+      }
+    }
+
+    res.json({
+      status: 'success',
+      message: `Debug data from all tables (${limitPerTable} records per table)`,
+      database: 'sqlite',
+      dbPath: process.env.DB_PATH || './pandaura.db',
+      tables: allData,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Debug data all error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: (error as Error).message,
+      timestamp: new Date().toISOString()
+    });
   }
 });
 

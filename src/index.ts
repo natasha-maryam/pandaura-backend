@@ -10,6 +10,7 @@ import orgRoutes from './routes/orgs';
 import testRoutes from './routes/test';
 import projectsRoutes from './routes/projects';
 import tagsRoutes from './routes/tags';
+import db from "./db/index"
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -27,9 +28,6 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
   'http://localhost:3000',
-  'http://127.0.0.1:5173',
-  'http://127.0.0.1:5174',
-  'http://127.0.0.1:3000',
   // Common production domains
   'https://pandaura.vercel.app',
   'https://pandaura-frontend.vercel.app',
@@ -75,6 +73,9 @@ app.use('/api/v1/orgs', orgRoutes);
 app.use('/api/v1/test', testRoutes);
 app.use('/api/v1/projects', projectsRoutes);
 app.use('/api/v1/tags', tagsRoutes);
+
+const rows = db.prepare("SELECT * FROM users").all();
+console.log(rows)
 
 app.get('/', (req, res) => {
   res.json({ 
