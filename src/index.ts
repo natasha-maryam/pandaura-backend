@@ -10,7 +10,6 @@ import orgRoutes from './routes/orgs';
 import testRoutes from './routes/test';
 import projectsRoutes from './routes/projects';
 import tagsRoutes from './routes/tags';
-import db from "./db/index"
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -74,8 +73,8 @@ app.use('/api/v1/test', testRoutes);
 app.use('/api/v1/projects', projectsRoutes);
 app.use('/api/v1/tags', tagsRoutes);
 
-const rows = db.prepare("SELECT * FROM users").all();
-console.log(rows)
+// const rows = db.prepare("SELECT * FROM users").all();
+// console.log(rows)
 
 app.get('/', (req, res) => {
   res.json({ 

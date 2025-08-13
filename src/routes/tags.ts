@@ -1,10 +1,25 @@
 import express from 'express';
+import multer from 'multer';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/authMiddleware';
 import { TagsTable, CreateTagData, UpdateTagData } from '../db/tables/tags';
 import { ProjectsTable } from '../db/tables/projects';
 import { logAuditEvent } from '../middleware/auditLogger';
+import { 
+  importBeckhoffCsv, 
+  exportBeckhoffCsv, 
+  importBeckhoffXml, 
+  exportBeckhoffXml 
+} from '../utils/beckhoffTagIO';
 
 const router = express.Router();
+
+// Configure multer for file uploads
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { 
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  }
+});
 
 // Validation helpers
 function validateTagName(name: any): string {
@@ -634,6 +649,190 @@ router.post('/export', authenticateToken, async (req: AuthenticatedRequest, res)
     }
 
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ===== BECKHOFF IMPORT/EXPORT ROUTES =====
+
+// Import Beckhoff CSV
+router.post('/projects/:projectId/import/beckhoff/csv', authenticateToken, upload.single('file'), async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const authReq = req as AuthenticatedRequest;
+    const userId = authReq.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Verify project exists and user has access
+    const project = ProjectsTable.getProjectById(parseInt(projectId), userId);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const result = await importBeckhoffCsv(req.file.buffer, parseInt(projectId), userId);
+    
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    // Log audit event
+    await logAuditEvent({
+      userId: userId,
+      action: 'IMPORT_BECKHOFF_CSV',
+      metadata: {
+        resource_type: 'tags',
+        resource_id: projectId,
+        imported_count: result.inserted,
+        filename: req.file.originalname
+      }
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error('Beckhoff CSV import error:', err);
+    res.status(500).json({ 
+      error: err instanceof Error ? err.message : 'Internal server error' 
+    });
+  }
+});
+
+// Export Beckhoff CSV
+router.get('/projects/:projectId/export/beckhoff/csv', authenticateToken, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const authReq = req as AuthenticatedRequest;
+    const userId = authReq.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    // Verify project exists and user has access
+    const project = ProjectsTable.getProjectById(parseInt(projectId), userId);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    res.setHeader('Content-Disposition', `attachment; filename="${project.project_name}-beckhoff-tags.csv"`);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+
+    await exportBeckhoffCsv(parseInt(projectId), res, { delimiter: ',' });
+
+    // Log audit event
+    await logAuditEvent({
+      userId: userId,
+      action: 'EXPORT_BECKHOFF_CSV',
+      metadata: {
+        resource_type: 'tags',
+        resource_id: projectId,
+        filename: `${project.project_name}-beckhoff-tags.csv`
+      }
+    });
+
+  } catch (err) {
+    console.error('Beckhoff CSV export error:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ 
+        error: err instanceof Error ? err.message : 'Internal server error' 
+      });
+    }
+  }
+});
+
+// Import Beckhoff XML
+router.post('/projects/:projectId/import/beckhoff/xml', authenticateToken, upload.single('file'), async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const authReq = req as AuthenticatedRequest;
+    const userId = authReq.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Verify project exists and user has access
+    const project = ProjectsTable.getProjectById(parseInt(projectId), userId);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const result = await importBeckhoffXml(req.file.buffer, parseInt(projectId), userId);
+    
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    // Log audit event
+    await logAuditEvent({
+      userId: userId,
+      action: 'IMPORT_BECKHOFF_XML',
+      metadata: {
+        resource_type: 'tags',
+        resource_id: projectId,
+        imported_count: result.inserted,
+        filename: req.file.originalname
+      }
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error('Beckhoff XML import error:', err);
+    res.status(500).json({ 
+      error: err instanceof Error ? err.message : 'Internal server error' 
+    });
+  }
+});
+
+// Export Beckhoff XML
+router.get('/projects/:projectId/export/beckhoff/xml', authenticateToken, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const authReq = req as AuthenticatedRequest;
+    const userId = authReq.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    // Verify project exists and user has access
+    const project = ProjectsTable.getProjectById(parseInt(projectId), userId);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    res.setHeader('Content-Disposition', `attachment; filename="${project.project_name}-beckhoff-tags.xml"`);
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+
+    await exportBeckhoffXml(parseInt(projectId), res);
+
+    // Log audit event
+    await logAuditEvent({
+      userId: userId,
+      action: 'EXPORT_BECKHOFF_XML',
+      metadata: {
+        resource_type: 'tags',
+        resource_id: projectId,
+        filename: `${project.project_name}-beckhoff-tags.xml`
+      }
+    });
+
+  } catch (err) {
+    console.error('Beckhoff XML export error:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ 
+        error: err instanceof Error ? err.message : 'Internal server error' 
+      });
+    }
   }
 });
 

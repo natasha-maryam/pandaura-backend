@@ -28,16 +28,22 @@
   },
   "homepage": "https://github.com/jazykhan3/pandora-backend#readme",
   "dependencies": {
+    "@types/multer": "^2.0.0",
     "@vercel/postgres": "^0.10.0",
     "argon2": "^0.31.2",
     "better-sqlite3": "^12.2.0",
     "cors": "^2.8.5",
+    "csv-parse": "^6.1.0",
     "express": "^5.1.0",
+    "fast-csv": "^5.0.5",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
+    "multer": "^2.0.2",
     "pg": "^8.16.3",
     "speakeasy": "^2.0.0",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "xml2js": "^0.6.2",
+    "xmlbuilder": "^15.1.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
@@ -48,6 +54,7 @@
     "@types/pg": "^8.15.5",
     "@types/speakeasy": "^2.0.10",
     "@types/uuid": "^9.0.7",
+    "@types/xml2js": "^0.4.14",
     "concurrently": "^9.2.0",
     "nodemon": "^3.1.10",
     "ts-node": "^10.9.2",

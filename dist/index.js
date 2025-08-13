@@ -27,9 +27,6 @@ const allowedOrigins = [
     'http://localhost:5173',
     'http://localhost:5174',
     'http://localhost:3000',
-    'http://127.0.0.1:5173',
-    'http://127.0.0.1:5174',
-    'http://127.0.0.1:3000',
     // Common production domains
     'https://pandaura.vercel.app',
     'https://pandaura-frontend.vercel.app',
@@ -67,6 +64,8 @@ app.use('/api/v1/orgs', orgs_1.default);
 app.use('/api/v1/test', test_1.default);
 app.use('/api/v1/projects', projects_1.default);
 app.use('/api/v1/tags', tags_1.default);
+// const rows = db.prepare("SELECT * FROM users").all();
+// console.log(rows)
 app.get('/', (req, res) => {
     res.json({
         message: 'Pandaura AS Backend API',
