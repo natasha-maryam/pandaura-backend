@@ -238,7 +238,15 @@ async function importRockwellCsv(buffer, projectId, userId) {
  */
 async function exportRockwellCsv(projectId, outStream, options = {}) {
     const delimiter = options.delimiter || ',';
-    const tags = tags_1.TagsTable.getTags({ project_id: projectId, page_size: 10000, page: 1 }).tags;
+    // Only get Rockwell tags for this project
+    const tags = tags_1.TagsTable.getTags({
+        project_id: projectId,
+        page_size: 10000,
+        page: 1,
+        vendor: 'rockwell'
+    }).tags;
+    console.log(`🚀 Exporting Rockwell CSV for project ${projectId}: Found ${tags.length} Rockwell tags`);
+    tags.forEach(tag => console.log(`  - ${tag.name} (${tag.vendor})`));
     const headers = [
         'Tag Name',
         'Data Type',
@@ -344,7 +352,13 @@ async function importRockwellL5X(buffer, projectId, userId) {
  * Generates Rockwell Studio 5000 L5X XML tag export compatible with import
  */
 async function exportRockwellL5X(projectId, outStream) {
-    const tags = tags_1.TagsTable.getTags({ project_id: projectId, page_size: 10000, page: 1 }).tags;
+    // Only get Rockwell tags for this project
+    const tags = tags_1.TagsTable.getTags({
+        project_id: projectId,
+        page_size: 10000,
+        page: 1,
+        vendor: 'rockwell'
+    }).tags;
     // Build XML root
     const root = xmlbuilder.create('ControllerTags', { encoding: 'utf-8' });
     for (const tag of tags) {

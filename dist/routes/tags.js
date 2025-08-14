@@ -1062,11 +1062,14 @@ router.get('/projects/:projectId/export/:vendor/formatted', authMiddleware_1.aut
         if (!project) {
             return res.status(403).json({ error: 'Access denied to this project' });
         }
-        // Get tags from the project
-        const tagsResult = tags_1.TagsTable.getTags({ project_id: projectId });
+        // Get tags from the project filtered by vendor
+        const tagsResult = tags_1.TagsTable.getTags({
+            project_id: projectId,
+            vendor: vendor
+        });
         const tags = tagsResult.tags;
         if (tags.length === 0) {
-            return res.status(404).json({ error: 'No tags found for this project' });
+            return res.status(404).json({ error: `No ${vendor} tags found for this project` });
         }
         // Format tags for the specified vendor
         const formattedTags = tags.map(tag => {

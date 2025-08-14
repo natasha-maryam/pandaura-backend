@@ -1,0 +1,3 @@
+Name,DataType,Address,Comment,InitialValue,Scope,AccessMode
+bEmergencyStop,BOOL,%I0.1,Emergency stop button,FALSE,global,
+bConveyorEnable,BOOL,%Q0.2,Conveyor enable signal,FALSE,global,

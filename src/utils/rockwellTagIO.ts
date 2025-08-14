@@ -250,7 +250,16 @@ export async function exportRockwellCsv(
 ): Promise<boolean> {
   const delimiter = options.delimiter || ',';
   
-  const tags = TagsTable.getTags({ project_id: projectId, page_size: 10000, page: 1 }).tags;
+  // Only get Rockwell tags for this project
+  const tags = TagsTable.getTags({ 
+    project_id: projectId, 
+    page_size: 10000, 
+    page: 1,
+    vendor: 'rockwell'
+  }).tags;
+
+  console.log(`🚀 Exporting Rockwell CSV for project ${projectId}: Found ${tags.length} Rockwell tags`);
+  tags.forEach(tag => console.log(`  - ${tag.name} (${tag.vendor})`));
 
   const headers = [
     'Tag Name',
@@ -380,7 +389,13 @@ export async function exportRockwellL5X(
   projectId: number,
   outStream: Writable
 ): Promise<boolean> {
-  const tags = TagsTable.getTags({ project_id: projectId, page_size: 10000, page: 1 }).tags;
+  // Only get Rockwell tags for this project
+  const tags = TagsTable.getTags({ 
+    project_id: projectId, 
+    page_size: 10000, 
+    page: 1,
+    vendor: 'rockwell'
+  }).tags;
 
   // Build XML root
   const root = xmlbuilder.create('ControllerTags', { encoding: 'utf-8' });

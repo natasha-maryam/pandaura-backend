@@ -352,8 +352,15 @@ export async function exportBeckhoffCsv(projectId: number, outStream: Writable, 
   const delimiter = options.delimiter || ',';
   
   try {
-    const tagsResult = TagsTable.getTags({ project_id: projectId });
+    // Only get Beckhoff tags for this project
+    const tagsResult = TagsTable.getTags({ 
+      project_id: projectId,
+      vendor: 'beckhoff'
+    });
     const tags = tagsResult.tags;
+
+    console.log(`🔧 Exporting Beckhoff CSV for project ${projectId}: Found ${tags.length} Beckhoff tags`);
+    tags.forEach(tag => console.log(`  - ${tag.name} (${tag.vendor})`));
 
     const headers = [
       'Name',
@@ -481,7 +488,11 @@ export async function importBeckhoffXml(buffer: Buffer, projectId: number, userI
 // --- Beckhoff XML Export (simplified) ---
 export async function exportBeckhoffXml(projectId: number, outStream: Writable): Promise<boolean> {
   try {
-    const tagsResult = TagsTable.getTags({ project_id: projectId });
+    // Only get Beckhoff tags for this project
+    const tagsResult = TagsTable.getTags({ 
+      project_id: projectId,
+      vendor: 'beckhoff'
+    });
     const tags = tagsResult.tags;
 
     const root = xmlbuilder.create('Variables', { encoding: 'utf-8' });
