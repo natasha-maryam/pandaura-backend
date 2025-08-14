@@ -11,6 +11,7 @@ import testRoutes from './routes/test';
 import projectsRoutes from './routes/projects';
 import tagsRoutes from './routes/tags';
 
+
 const app = express();
 const port = process.env.PORT || 5000;
 
@@ -60,6 +61,12 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+// Add request logging
+app.use((req, res, next) => {
+  console.log(`Incoming request: ${req.method} ${req.path} - Full URL: ${req.url}`);
+  next();
+});
+
 // Trust proxy for accurate IP addresses in audit logs
 app.set('trust proxy', true);
 
@@ -72,6 +79,13 @@ app.use('/api/v1/orgs', orgRoutes);
 app.use('/api/v1/test', testRoutes);
 app.use('/api/v1/projects', projectsRoutes);
 app.use('/api/v1/tags', tagsRoutes);
+
+
+// Add a simple test route
+app.get('/api/v1/simple-test', (req, res) => {
+  console.log('Simple test route hit!');
+  res.json({ message: 'Simple test route works!' });
+});
 
 // const rows = db.prepare("SELECT * FROM users").all();
 // console.log(rows)
@@ -116,4 +130,12 @@ app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });

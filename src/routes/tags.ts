@@ -10,6 +10,20 @@ import {
   importBeckhoffXml, 
   exportBeckhoffXml 
 } from '../utils/beckhoffTagIO';
+import {
+  importRockwellCsv,
+  exportRockwellCsv,
+  importRockwellL5X,
+  exportRockwellL5X
+} from '../utils/rockwellTagIO';
+import {
+  formatTagForVendor,
+  validateAddressForVendor,
+  type VendorTag,
+  type RockwellTag,
+  type SiemensTag,
+  type BeckhoffTag
+} from '../utils/vendorFormatters';
 
 const router = express.Router();
 
@@ -833,6 +847,466 @@ router.get('/projects/:projectId/export/beckhoff/xml', authenticateToken, async 
         error: err instanceof Error ? err.message : 'Internal server error' 
       });
     }
+  }
+});
+
+// === ROCKWELL IMPORT/EXPORT ROUTES ===
+
+// Export Rockwell CSV tags
+router.get('/projects/:projectId/export/rockwell/csv', authenticateToken, async (req, res) => {
+  try {
+    const userId = (req as AuthenticatedRequest).user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const projectId = parseInt(req.params.projectId);
+    if (isNaN(projectId)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+
+    // Verify project exists and user has access
+    const project = ProjectsTable.getProjectById(projectId, userId);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    // Set response headers for file download
+    const filename = `${project.project_name.replace(/[^a-zA-Z0-9]/g, '_')}_rockwell_tags.csv`;
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    // Export directly to response stream
+    await exportRockwellCsv(projectId, res);
+
+    await logAuditEvent({
+      userId: userId,
+      action: 'EXPORT_ROCKWELL_CSV',
+      metadata: {
+        resource_type: 'tags',
+        resource_id: projectId,
+        filename: filename
+      }
+    });
+
+  } catch (error) {
+    console.error('Error exporting Rockwell CSV:', error);
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Failed to export Rockwell CSV' 
+    });
+  }
+});
+
+// Export Rockwell L5X XML tags
+router.get('/projects/:projectId/export/rockwell/l5x', authenticateToken, async (req, res) => {
+  try {
+    const userId = (req as AuthenticatedRequest).user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const projectId = parseInt(req.params.projectId);
+    if (isNaN(projectId)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+
+    // Verify project exists and user has access
+    const project = ProjectsTable.getProjectById(projectId, userId);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    // Set response headers for file download
+    const filename = `${project.project_name.replace(/[^a-zA-Z0-9]/g, '_')}_rockwell_tags.l5x`;
+    res.setHeader('Content-Type', 'application/xml');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    // Export directly to response stream
+    await exportRockwellL5X(projectId, res);
+
+    await logAuditEvent({
+      userId: userId,
+      action: 'EXPORT_ROCKWELL_L5X',
+      metadata: {
+        resource_type: 'tags',
+        resource_id: projectId,
+        filename: filename
+      }
+    });
+
+  } catch (error) {
+    console.error('Error exporting Rockwell L5X:', error);
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Failed to export Rockwell L5X' 
+    });
+  }
+});
+
+// Import Rockwell CSV tags
+router.post('/projects/:projectId/import/rockwell/csv', authenticateToken, upload.single('file'), async (req, res) => {
+  try {
+    const userId = (req as AuthenticatedRequest).user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const projectId = parseInt(req.params.projectId);
+    if (isNaN(projectId)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+
+    // Verify project exists and user has access
+    const project = ProjectsTable.getProjectById(projectId, userId);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    if (!req.file.mimetype.includes('csv') && !req.file.originalname?.toLowerCase().endsWith('.csv')) {
+      return res.status(400).json({ error: 'File must be a CSV file' });
+    }
+
+    const result = await importRockwellCsv(req.file.buffer, projectId, userId);
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    await logAuditEvent({
+      userId: userId,
+      action: 'IMPORT_ROCKWELL_CSV',
+      metadata: {
+        resource_type: 'tags',
+        resource_id: projectId,
+        imported_count: result.inserted,
+        filename: req.file.originalname
+      }
+    });
+
+    res.json(result);
+
+  } catch (error) {
+    console.error('Error importing Rockwell CSV:', error);
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Failed to import Rockwell CSV' 
+    });
+  }
+});
+
+// Import Rockwell L5X XML tags
+router.post('/projects/:projectId/import/rockwell/l5x', authenticateToken, upload.single('file'), async (req, res) => {
+  try {
+    const userId = (req as AuthenticatedRequest).user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const projectId = parseInt(req.params.projectId);
+    if (isNaN(projectId)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+
+    // Verify project exists and user has access
+    const project = ProjectsTable.getProjectById(projectId, userId);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    if (!req.file.mimetype.includes('xml') && !req.file.originalname?.toLowerCase().endsWith('.l5x')) {
+      return res.status(400).json({ error: 'File must be an L5X file' });
+    }
+
+    const result = await importRockwellL5X(req.file.buffer, projectId, userId);
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    await logAuditEvent({
+      userId: userId,
+      action: 'IMPORT_ROCKWELL_L5X',
+      metadata: {
+        resource_type: 'tags',
+        resource_id: projectId,
+        imported_count: result.inserted,
+        filename: req.file.originalname
+      }
+    });
+
+    res.json(result);
+
+  } catch (error) {
+    console.error('Error importing Rockwell L5X:', error);
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Failed to import Rockwell L5X' 
+    });
+  }
+});
+
+// --- GET /api/v1/tags/stats/:projectId - Get tag statistics
+router.get('/stats/:projectId', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const projectId = parseInt(req.params.projectId);
+    if (!projectId || isNaN(projectId)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+
+    // Verify user has access to the project
+    const project = await ProjectsTable.getProjectById(projectId, userId);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found or access denied' });
+    }
+
+    // Get tag statistics
+    const stats = await TagsTable.getTagStats(projectId, userId);
+
+    await logAuditEvent({
+      userId: userId,
+      action: 'TAG_STATS_VIEWED',
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      metadata: {
+        project_id: projectId,
+        stats_requested: true
+      }
+    });
+
+    res.json({
+      success: true,
+      data: stats
+    });
+
+  } catch (error) {
+    console.error('Error getting tag statistics:', error);
+    res.status(500).json({ error: 'Failed to get tag statistics' });
+  }
+});
+
+// --- POST /api/v1/tags/format/:vendor - Format tags for specific vendor
+router.post('/format/:vendor', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const vendor = validateVendor(req.params.vendor);
+    const { tags, projectId } = req.body;
+
+    if (!Array.isArray(tags) || tags.length === 0) {
+      return res.status(400).json({ error: 'Tags array is required and cannot be empty' });
+    }
+
+    if (!projectId) {
+      return res.status(400).json({ error: 'Project ID is required' });
+    }
+
+    // Verify project access
+    const project = ProjectsTable.getProjectById(parseInt(projectId), userId);
+    if (!project) {
+      return res.status(403).json({ error: 'Access denied to this project' });
+    }
+
+    // Format tags for the specified vendor
+    const formattedTags = tags.map((tag: any) => {
+      const vendorTag: VendorTag = {
+        name: tag.name || 'Unnamed',
+        dataType: tag.dataType || tag.type || 'DINT',
+        address: tag.address,
+        description: tag.description,
+        scope: tag.scope || 'global',
+        defaultValue: tag.defaultValue || tag.default_value,
+        vendor: vendor
+      };
+
+      try {
+        return formatTagForVendor(vendorTag, vendor);
+      } catch (error) {
+        console.error(`Error formatting tag ${tag.name}:`, error);
+        return {
+          ...vendorTag,
+          error: `Failed to format: ${error instanceof Error ? error.message : 'Unknown error'}`
+        };
+      }
+    });
+
+    // Log the formatting action
+    await logAuditEvent({
+      userId: userId,
+      action: 'TAGS_FORMATTED',
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      metadata: {
+        project_id: parseInt(projectId),
+        vendor,
+        tag_count: tags.length,
+        formatted_count: formattedTags.filter(t => !('error' in t)).length
+      }
+    });
+
+    res.json({
+      success: true,
+      data: {
+        vendor,
+        originalCount: tags.length,
+        formattedCount: formattedTags.filter(t => !('error' in t)).length,
+        tags: formattedTags
+      }
+    });
+
+  } catch (error) {
+    console.error('Error formatting tags:', error);
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Failed to format tags' 
+    });
+  }
+});
+
+// --- POST /api/v1/tags/validate-addresses/:vendor - Validate addresses for specific vendor
+router.post('/validate-addresses/:vendor', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const vendor = validateVendor(req.params.vendor);
+    const { addresses } = req.body;
+
+    if (!Array.isArray(addresses) || addresses.length === 0) {
+      return res.status(400).json({ error: 'Addresses array is required and cannot be empty' });
+    }
+
+    // Validate each address
+    const validationResults = addresses.map((address: string) => ({
+      address,
+      isValid: validateAddressForVendor(address, vendor),
+      vendor
+    }));
+
+    const validCount = validationResults.filter(r => r.isValid).length;
+    const invalidCount = validationResults.length - validCount;
+
+    // Log the validation action
+    await logAuditEvent({
+      userId: userId,
+      action: 'ADDRESSES_VALIDATED',
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      metadata: {
+        vendor,
+        total_addresses: addresses.length,
+        valid_addresses: validCount,
+        invalid_addresses: invalidCount
+      }
+    });
+
+    res.json({
+      success: true,
+      data: {
+        vendor,
+        totalAddresses: addresses.length,
+        validAddresses: validCount,
+        invalidAddresses: invalidCount,
+        results: validationResults
+      }
+    });
+
+  } catch (error) {
+    console.error('Error validating addresses:', error);
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Failed to validate addresses' 
+    });
+  }
+});
+
+// --- GET /api/v1/tags/projects/:projectId/export/:vendor/formatted - Export tags in vendor-specific format
+router.get('/projects/:projectId/export/:vendor/formatted', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const projectId = parseInt(req.params.projectId);
+    const vendor = validateVendor(req.params.vendor);
+
+    // Verify project access
+    const project = ProjectsTable.getProjectById(projectId, userId);
+    if (!project) {
+      return res.status(403).json({ error: 'Access denied to this project' });
+    }
+
+    // Get tags from the project
+    const tagsResult = TagsTable.getTags({ project_id: projectId });
+    const tags = tagsResult.tags;
+
+    if (tags.length === 0) {
+      return res.status(404).json({ error: 'No tags found for this project' });
+    }
+
+    // Format tags for the specified vendor
+    const formattedTags = tags.map(tag => {
+      const vendorTag: VendorTag = {
+        name: tag.name,
+        dataType: tag.data_type,
+        address: tag.address,
+        description: tag.description,
+        scope: tag.scope,
+        defaultValue: tag.default_value,
+        vendor: vendor
+      };
+
+      return formatTagForVendor(vendorTag, vendor);
+    });
+
+    // Set appropriate headers for download
+    const filename = `${project.project_name}_${vendor}_tags_${new Date().toISOString().split('T')[0]}.json`;
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    // Log the export action
+    await logAuditEvent({
+      userId: userId,
+      action: 'TAGS_EXPORTED_FORMATTED',
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      metadata: {
+        project_id: projectId,
+        vendor,
+        tag_count: tags.length,
+        export_format: 'json'
+      }
+    });
+
+    res.json({
+      project: {
+        id: project.id,
+        name: project.project_name,
+        vendor: vendor
+      },
+      exportDate: new Date().toISOString(),
+      tagCount: formattedTags.length,
+      tags: formattedTags
+    });
+
+  } catch (error) {
+    console.error('Error exporting formatted tags:', error);
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Failed to export formatted tags' 
+    });
   }
 });
 

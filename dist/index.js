@@ -54,6 +54,11 @@ app.use((0, cors_1.default)({
 // Body parsing middleware
 app.use(express_1.default.json({ limit: '10mb' }));
 app.use(express_1.default.urlencoded({ extended: true }));
+// Add request logging
+app.use((req, res, next) => {
+    console.log(`Incoming request: ${req.method} ${req.path} - Full URL: ${req.url}`);
+    next();
+});
 // Trust proxy for accurate IP addresses in audit logs
 app.set('trust proxy', true);
 // Initialize database tables
@@ -64,6 +69,11 @@ app.use('/api/v1/orgs', orgs_1.default);
 app.use('/api/v1/test', test_1.default);
 app.use('/api/v1/projects', projects_1.default);
 app.use('/api/v1/tags', tags_1.default);
+// Add a simple test route
+app.get('/api/v1/simple-test', (req, res) => {
+    console.log('Simple test route hit!');
+    res.json({ message: 'Simple test route works!' });
+});
 // const rows = db.prepare("SELECT * FROM users").all();
 // console.log(rows)
 app.get('/', (req, res) => {
@@ -102,4 +112,10 @@ app.listen(port, () => {
     console.log(`Server is running on http://localhost:${port}`);
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
+});
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error);
+});
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
