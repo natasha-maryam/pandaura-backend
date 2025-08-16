@@ -6,11 +6,11 @@ export async function initializeTables() {
   try {
     if (process.env.VERCEL || process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production') {
       // Use PostgreSQL in production (Vercel or Railway)
-      console.log('Initializing PostgreSQL tables...');
+      // console.log('Initializing PostgreSQL tables...');
       await postgresDB.initializeTables();
     } else {
       // Use SQLite for local development
-      console.log('Initializing SQLite tables...');
+      // console.log('Initializing SQLite tables...');
       initSQLiteTables();
     }
   } catch (error) {

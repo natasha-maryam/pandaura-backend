@@ -74,6 +74,6 @@ export class ProjectAutoSaveTable {
     `);
 
     stmt.run();
-    console.log('✅ Project auto-save table initialized');
+    // console.log('✅ Project auto-save table initialized');
   }
 }

@@ -88,7 +88,7 @@ export class TagsTable {
       db.prepare(indexSQL).run();
     });
 
-    console.log('✅ Tags table and indexes created successfully');
+    // console.log('✅ Tags table and indexes created successfully');
   }
 
   // Create a new tag

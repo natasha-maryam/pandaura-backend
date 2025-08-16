@@ -56,7 +56,7 @@ export class ProjectsTable {
     try {
       db.exec(createTableSQL);
       createIndexSQL.forEach(indexSQL => db.exec(indexSQL));
-      console.log('Projects table initialized successfully');
+      // console.log('Projects table initialized successfully');
     } catch (error) {
       console.error('Error initializing projects table:', error);
       throw error;

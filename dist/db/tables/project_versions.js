@@ -86,7 +86,7 @@ class ProjectVersionsTable {
       )
     `);
         stmt.run();
-        console.log('✅ Project versions table initialized');
+        // console.log('✅ Project versions table initialized');
     }
 }
 exports.ProjectVersionsTable = ProjectVersionsTable;

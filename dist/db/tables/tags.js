@@ -43,7 +43,7 @@ class TagsTable {
         indexes.forEach(indexSQL => {
             index_1.default.prepare(indexSQL).run();
         });
-        console.log('✅ Tags table and indexes created successfully');
+        // console.log('✅ Tags table and indexes created successfully');
     }
     // Create a new tag
     static createTag(data) {

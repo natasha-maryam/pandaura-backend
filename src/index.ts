@@ -1,6 +1,7 @@
 
 console.log("Welcome to Pandaura Backend");
 
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -11,10 +12,13 @@ import testRoutes from './routes/test';
 import projectsRoutes from './routes/projects';
 import tagsRoutes from './routes/tags';
 import projectVersionsRoutes from './routes/project_versions';
-
+import http from 'http';
+import { TagSyncService } from './services/tagSyncService';
+import { WebSocketServer } from 'ws';
 
 const app = express();
 const port = process.env.PORT || 5000;
+const server = http.createServer(app);
 
 // Security middleware
 app.use(helmet());
@@ -89,6 +93,15 @@ app.get('/api/v1/simple-test', (req, res) => {
   res.json({ message: 'Simple test route works!' });
 });
 
+// WebSocket test endpoint
+app.get('/api/v1/ws-test', (req, res) => {
+  res.json({
+    message: 'WebSocket server should be running',
+    wsEndpoints: ['/ws/tags', '/ws/test'],
+    serverTime: new Date().toISOString()
+  });
+});
+
 // const rows = db.prepare("SELECT * FROM users").all();
 // console.log(rows)
 
@@ -128,7 +141,50 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
 
-app.listen(port, () => {
+
+const allowedWsOrigins = allowedOrigins;
+console.log('🌐 Allowed WebSocket origins:', allowedWsOrigins);
+
+const wss = new WebSocketServer({
+  server,
+  path: '/ws/tags',  // Only handle /ws/tags path
+  verifyClient: (info, done) => {
+    console.log('🔍 WebSocket connection attempt:');
+    console.log('  - URL:', info.req.url);
+    console.log('  - Origin:', info.origin || 'none');
+    console.log('  - Host:', info.req.headers.host);
+
+    const origin = info.origin;
+
+    // Allow connections without origin (for testing) or from allowed origins
+    if (!origin) {
+      console.log('✅ No origin header - allowing connection');
+      done(true);
+      return;
+    }
+
+    const isAllowed = allowedWsOrigins.some(allowedOrigin =>
+      origin === allowedOrigin ||
+      origin.endsWith('.vercel.app') ||
+      origin.startsWith('http://localhost') ||
+      origin.startsWith('http://127.0.0.1')
+    );
+
+    if (isAllowed) {
+      console.log('✅ Origin allowed:', origin);
+      done(true);
+    } else {
+      console.log('❌ WS blocked origin:', origin);
+      console.log('✅ Allowed WS origins:', allowedWsOrigins);
+      done(false, 403, 'Forbidden');
+    }
+  }
+});
+
+// Pass WebSocket server to your TagSyncService
+new TagSyncService(wss);
+
+server.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);

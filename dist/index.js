@@ -14,8 +14,12 @@ const test_1 = __importDefault(require("./routes/test"));
 const projects_1 = __importDefault(require("./routes/projects"));
 const tags_1 = __importDefault(require("./routes/tags"));
 const project_versions_1 = __importDefault(require("./routes/project_versions"));
+const http_1 = __importDefault(require("http"));
+const tagSyncService_1 = require("./services/tagSyncService");
+const ws_1 = require("ws");
 const app = (0, express_1.default)();
 const port = process.env.PORT || 5000;
+const server = http_1.default.createServer(app);
 // Security middleware
 app.use((0, helmet_1.default)());
 // Configure CORS to handle multiple origins
@@ -76,6 +80,14 @@ app.get('/api/v1/simple-test', (req, res) => {
     console.log('Simple test route hit!');
     res.json({ message: 'Simple test route works!' });
 });
+// WebSocket test endpoint
+app.get('/api/v1/ws-test', (req, res) => {
+    res.json({
+        message: 'WebSocket server should be running',
+        wsEndpoints: ['/ws/tags', '/ws/test'],
+        serverTime: new Date().toISOString()
+    });
+});
 // const rows = db.prepare("SELECT * FROM users").all();
 // console.log(rows)
 app.get('/', (req, res) => {
@@ -110,7 +122,41 @@ app.use((err, req, res, next) => {
 app.use((req, res) => {
     res.status(404).json({ error: 'Endpoint not found' });
 });
-app.listen(port, () => {
+const allowedWsOrigins = allowedOrigins;
+console.log('🌐 Allowed WebSocket origins:', allowedWsOrigins);
+const wss = new ws_1.WebSocketServer({
+    server,
+    path: '/ws/tags', // Only handle /ws/tags path
+    verifyClient: (info, done) => {
+        console.log('🔍 WebSocket connection attempt:');
+        console.log('  - URL:', info.req.url);
+        console.log('  - Origin:', info.origin || 'none');
+        console.log('  - Host:', info.req.headers.host);
+        const origin = info.origin;
+        // Allow connections without origin (for testing) or from allowed origins
+        if (!origin) {
+            console.log('✅ No origin header - allowing connection');
+            done(true);
+            return;
+        }
+        const isAllowed = allowedWsOrigins.some(allowedOrigin => origin === allowedOrigin ||
+            origin.endsWith('.vercel.app') ||
+            origin.startsWith('http://localhost') ||
+            origin.startsWith('http://127.0.0.1'));
+        if (isAllowed) {
+            console.log('✅ Origin allowed:', origin);
+            done(true);
+        }
+        else {
+            console.log('❌ WS blocked origin:', origin);
+            console.log('✅ Allowed WS origins:', allowedWsOrigins);
+            done(false, 403, 'Forbidden');
+        }
+    }
+});
+// Pass WebSocket server to your TagSyncService
+new tagSyncService_1.TagSyncService(wss);
+server.listen(port, () => {
     console.log(`Server is running on http://localhost:${port}`);
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);

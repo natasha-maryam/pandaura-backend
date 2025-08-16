@@ -29,7 +29,7 @@ class ProjectsTable {
         try {
             index_1.default.exec(createTableSQL);
             createIndexSQL.forEach(indexSQL => index_1.default.exec(indexSQL));
-            console.log('Projects table initialized successfully');
+            // console.log('Projects table initialized successfully');
         }
         catch (error) {
             console.error('Error initializing projects table:', error);
