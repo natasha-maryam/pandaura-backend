@@ -16,7 +16,9 @@ import http from 'http';
 import { TagSyncService } from './services/tagSyncService';
 import { WebSocketServer } from 'ws';
 
-const app = express();
+
+
+const app = express()
 const port = process.env.PORT || 5000;
 const server = http.createServer(app);
 
@@ -102,6 +104,7 @@ app.get('/api/v1/ws-test', (req, res) => {
   });
 });
 
+
 // const rows = db.prepare("SELECT * FROM users").all();
 // console.log(rows)
 
@@ -143,7 +146,7 @@ app.use((req, res) => {
 
 
 const allowedWsOrigins = allowedOrigins;
-console.log('🌐 Allowed WebSocket origins:', allowedWsOrigins);
+// console.log('🌐 Allowed WebSocket origins:', allowedWsOrigins);
 
 const wss = new WebSocketServer({
   server,

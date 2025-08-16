@@ -104,11 +104,11 @@ export function generateRockwellAddress(scope?: string, type?: string): string |
 export function formatTagForSiemens(tag: VendorTag): SiemensTag {
   // Map Rockwell-like data types to Siemens types
   const dataTypeMap: Record<string, string> = {
-    BOOL: 'Bool',
-    INT: 'Int',
-    DINT: 'DInt',
-    REAL: 'Real',
-    STRING: 'String',
+    BOOL: 'BOOL',
+    INT: 'INT',
+    DINT: 'DINT',
+    REAL: 'REAL',
+    STRING: 'STRING',
   };
   
   const dataType = dataTypeMap[tag.dataType.toUpperCase()] || 'Int';

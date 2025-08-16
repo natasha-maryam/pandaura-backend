@@ -2,6 +2,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import jwt from 'jsonwebtoken';
 import { TagsTable } from '../db/tables/tags';
+import { ProjectsTable } from '../db/tables/projects';
 import { parseSTVariablesDetailed } from '../utils/stParser';
 import { formatTagForVendor } from '../utils/vendorFormatters';
 
@@ -271,15 +272,29 @@ export class TagSyncService {
     }
 
     const startTime = Date.now();
-    console.log(`🔄 Starting tag sync for project ${message.projectId}, vendor: ${message.vendor}, syncId: ${syncId || 'direct'}`);
 
     try {
-      // Parse variables from ST code
-      const parsedTags = parseSTVariablesDetailed(message.stCode, message.vendor);
-      console.log(`📝 Parsed ${parsedTags.length} tags from ST code`);
+      // Get project details to determine vendor
+      const projectId = parseInt(message.projectId);
+      const project = ProjectsTable.getProjectById(projectId, ws.user!.userId);
 
-      // Format tags for the specific vendor
+      if (!project) {
+        console.error(`❌ Project ${projectId} not found for user ${ws.user!.userId}`);
+        this.sendError(ws, `Project ${projectId} not found`);
+        return;
+      }
+
+      const projectVendor = project.target_plc_vendor || 'rockwell'; // Default to rockwell
+      console.log(`🔄 Starting tag sync for project ${message.projectId}, using project vendor: ${projectVendor}, syncId: ${syncId || 'direct'}`);
+
+      // Parse variables from ST code using project vendor
+      const parsedTags = parseSTVariablesDetailed(message.stCode, projectVendor);
+      console.log(`📝 Parsed ${parsedTags.length} tags from ST code`);
+      console.log(`📝 Raw parsed tags:`, JSON.stringify(parsedTags, null, 2));
+
+      // Format tags for the project's vendor (ignore the vendor from message)
       const formattedTags = parsedTags.map(tag => {
+        console.log(`📝 Processing tag: ${tag.name}, dataType: "${tag.dataType}"`);
         const vendorTag = {
           name: tag.name,
           dataType: tag.dataType,
@@ -287,9 +302,11 @@ export class TagSyncService {
           description: tag.description,
           scope: tag.scope || 'Local',
           defaultValue: tag.defaultValue,
-          vendor: message.vendor!
+          vendor: projectVendor
         };
-        return formatTagForVendor(vendorTag, message.vendor!.toLowerCase() as 'rockwell' | 'siemens' | 'beckhoff');
+        const formatted = formatTagForVendor(vendorTag, projectVendor as 'rockwell' | 'siemens' | 'beckhoff');
+        console.log(`📝 Formatted tag:`, JSON.stringify(formatted, null, 2));
+        return formatted;
       });
 
       // Upsert tags in database
@@ -334,6 +351,35 @@ export class TagSyncService {
     const projectIdNum = parseInt(projectId);
     console.log(`🔍 Checking if project ${projectIdNum} and user ${userId} exist in database...`);
 
+    // For now, let's create the project if it doesn't exist
+    try {
+      const db = require('../db/index').default;
+
+      // Check if project exists
+      const projectCheck = db.prepare('SELECT id FROM projects WHERE id = ?').get(projectIdNum);
+      if (!projectCheck) {
+        console.log(`🔧 Project ${projectIdNum} doesn't exist, creating it...`);
+        db.prepare(`
+          INSERT INTO projects (id, name, description, created_at, updated_at)
+          VALUES (?, ?, ?, datetime('now'), datetime('now'))
+        `).run(projectIdNum, `Project ${projectIdNum}`, `Auto-created project for Logic Studio`);
+        console.log(`✅ Created project ${projectIdNum}`);
+      }
+
+      // Check if user exists
+      const userCheck = db.prepare('SELECT id FROM users WHERE id = ?').get(userId);
+      if (!userCheck) {
+        console.log(`🔧 User ${userId} doesn't exist, creating it...`);
+        db.prepare(`
+          INSERT INTO users (id, username, email, role, created_at, updated_at)
+          VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+        `).run(userId, `User-${userId.substring(0, 8)}`, `${userId}@example.com`, 'Admin');
+        console.log(`✅ Created user ${userId}`);
+      }
+    } catch (error) {
+      console.error('Error checking/creating project and user:', error);
+    }
+
     // Fetch all existing tags for the project once
     const existingTagsResult = TagsTable.getTags({ project_id: projectIdNum, page_size: 1000 });
     const existingTags = existingTagsResult.tags;
@@ -345,33 +391,61 @@ export class TagSyncService {
         const existingTag = existingTags.find((t: any) => t.name === tagName);
 
         if (existingTag) {
-          // Update existing tag
+          // Update existing tag with normalized values
+          const rawDataTypeForUpdate = tag.DataType || tag.dataType;
+          const normalizedDataTypeForUpdate = rawDataTypeForUpdate?.toUpperCase() || 'BOOL';
+
+          const rawScopeForUpdate = tag.Scope || tag.scope || 'local';
+          const normalizedScopeForUpdate = rawScopeForUpdate.toLowerCase();
+
+          const rawVendorForUpdate = tag.Vendor || tag.vendor || 'rockwell';
+          const normalizedVendorForUpdate = rawVendorForUpdate.toLowerCase();
+
+          console.log(`🔍 TagSync Update: Raw data type: "${rawDataTypeForUpdate}" → Normalized: "${normalizedDataTypeForUpdate}"`);
+          console.log(`🔍 TagSync Update: Raw scope: "${rawScopeForUpdate}" → Normalized: "${normalizedScopeForUpdate}"`);
+          console.log(`🔍 TagSync Update: Raw vendor: "${rawVendorForUpdate}" → Normalized: "${normalizedVendorForUpdate}"`);
+
           TagsTable.updateTag(existingTag.id, {
-            type: tag.DataType || tag.dataType,
-            data_type: tag.DataType || tag.dataType,
+            type: normalizedDataTypeForUpdate,
+            data_type: normalizedDataTypeForUpdate,
             address: tag.Address || tag.address,
             default_value: tag.DefaultValue || tag.defaultValue,
-            vendor: (tag.Vendor || tag.vendor)?.toLowerCase(),
-            scope: tag.Scope || tag.scope,
+            vendor: normalizedVendorForUpdate,
+            scope: normalizedScopeForUpdate,
+            description: tag.Description || tag.description || ''
           });
         } else {
-          // Create new tag
+          // Create new tag with normalized values
+          const rawDataType = tag.DataType || tag.dataType;
+          const normalizedDataType = rawDataType?.toUpperCase() || 'BOOL';
+
+          const rawScope = tag.Scope || tag.scope || 'local';
+          const normalizedScope = rawScope.toLowerCase();
+
+          const rawVendor = tag.Vendor || tag.vendor || 'rockwell';
+          const normalizedVendor = rawVendor.toLowerCase();
+
+          console.log(`🔍 TagSync Create: Raw data type: "${rawDataType}" → Normalized: "${normalizedDataType}"`);
+          console.log(`🔍 TagSync Create: Raw scope: "${rawScope}" → Normalized: "${normalizedScope}"`);
+          console.log(`🔍 TagSync Create: Raw vendor: "${rawVendor}" → Normalized: "${normalizedVendor}"`);
+
           const tagData = {
             project_id: parseInt(projectId),
             user_id: String(userId),
             name: tagName,
             description: tag.Description || tag.description || '',
-            type: tag.DataType || tag.dataType,
-            data_type: tag.DataType || tag.dataType,
+            type: normalizedDataType,
+            data_type: normalizedDataType,
             address: tag.Address || tag.address,
             default_value: tag.DefaultValue || tag.defaultValue,
-            vendor: (tag.Vendor || tag.vendor)?.toLowerCase(),
-            scope: (tag.Scope || tag.scope || 'local').toLowerCase(),
+            vendor: normalizedVendor,
+            scope: normalizedScope,
             tag_type: 'memory' as const, // default, adjust as needed
             is_ai_generated: false
           };
 
           console.log(`🔍 Creating tag with data:`, JSON.stringify(tagData, null, 2));
+          console.log(`🔍 Data type being inserted: "${tagData.data_type}" (length: ${tagData.data_type?.length})`);
           TagsTable.createTag(tagData);
         }
       } catch (error) {

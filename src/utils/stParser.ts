@@ -89,8 +89,12 @@ function parseVariableLine(line: string, scope: string, vendor?: string, lineNum
 
   if (!match) return null;
 
-  const [, name, dataType, defaultValue, comment] = match;
-  
+  const [, name, rawDataType, defaultValue, comment] = match;
+
+  // Normalize data type to uppercase to match database constraints
+  const dataType = rawDataType.trim().toUpperCase();
+  console.log(`🔍 ST Parser: Raw data type: "${rawDataType}" → Normalized: "${dataType}"`);
+
   // Extract address and description from comment if present
   let address: string | undefined;
   let description: string | undefined;
@@ -134,8 +138,8 @@ function parseInlineVariable(line: string, scope: string, vendor?: string, lineN
 
   const [, name, value, comment] = match;
   
-  // Infer data type from value
-  const dataType = inferDataTypeFromValue(value.trim());
+  // Infer data type from value and normalize it
+  const dataType = normalizeDataType(inferDataTypeFromValue(value.trim()));
   
   let address: string | undefined;
   let description: string | undefined;
@@ -211,6 +215,37 @@ function parseDefaultValue(value?: string): string | number | boolean | undefine
 
   // Return as string for everything else
   return trimmedValue;
+}
+
+/**
+ * Normalize data type to match database constraints
+ */
+function normalizeDataType(dataType: string): string {
+  const normalized = dataType.toUpperCase();
+
+  // Map common variations to standard types
+  const typeMap: Record<string, string> = {
+    'BOOL': 'BOOL',
+    'BOOLEAN': 'BOOL',
+    'BIT': 'BOOL',
+    'INT': 'INT',
+    'INTEGER': 'INT',
+    'DINT': 'DINT',
+    'DOUBLE_INT': 'DINT',
+    'REAL': 'REAL',
+    'FLOAT': 'REAL',
+    'STRING': 'STRING',
+    'TIMER': 'TIMER',
+    'COUNTER': 'COUNTER',
+    'TON': 'TIMER',
+    'TOF': 'TIMER',
+    'TP': 'TIMER',
+    'CTU': 'COUNTER',
+    'CTD': 'COUNTER',
+    'CTUD': 'COUNTER'
+  };
+
+  return typeMap[normalized] || normalized;
 }
 
 /**
