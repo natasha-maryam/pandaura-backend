@@ -1,7 +1,6 @@
 import express from 'express';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/authMiddleware';
 import { ProjectVersionsTable } from '../db/tables/project_versions';
-import { ProjectAutoSaveTable } from '../db/tables/project_autosave';
 import { ProjectsTable } from '../db/tables/projects';
 import { logAuditEvent } from '../middleware/auditLogger';
 
@@ -37,7 +36,7 @@ const authorizeProjectAccess = async (req: ProjectAuthRequest, res: express.Resp
   }
 };
 
-// GET /api/v1/projects/:projectId/versions - List all versions metadata
+// GET /:projectId/versions - List all versions
 router.get('/:projectId/versions', authenticateToken, authorizeProjectAccess, async (req: ProjectAuthRequest, res) => {
   try {
     const projectId = parseInt(req.params.projectId, 10);
@@ -51,7 +50,6 @@ router.get('/:projectId/versions', authenticateToken, authorizeProjectAccess, as
       created_at: version.created_at,
       message: version.message,
       is_auto: version.is_auto,
-      // Include basic snapshot info without full data
       snapshot_info: {
         has_autosave: !!version.data?.autosaveState,
         project_name: version.data?.projectMetadata?.project_name,
@@ -66,30 +64,8 @@ router.get('/:projectId/versions', authenticateToken, authorizeProjectAccess, as
   }
 });
 
-// GET /api/v1/projects/:projectId/version/:versionNumber - Get full snapshot for a specific version
-router.get('/:projectId/version/:versionNumber', authenticateToken, authorizeProjectAccess, async (req: ProjectAuthRequest, res) => {
-  try {
-    const projectId = parseInt(req.params.projectId, 10);
-    const versionNumber = parseInt(req.params.versionNumber, 10);
-
-    if (isNaN(versionNumber) || versionNumber < 1) {
-      return res.status(400).json({ error: 'Invalid version number' });
-    }
-
-    const version = await ProjectVersionsTable.getVersion(projectId, versionNumber);
-    if (!version) {
-      return res.status(404).json({ error: 'Version not found' });
-    }
-
-    res.json({ success: true, data: version.data });
-  } catch (error) {
-    console.error('Error fetching project version data:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// POST /api/v1/projects/:projectId/version - Save new project version (autosave or manual)
-router.post('/:projectId/version', authenticateToken, authorizeProjectAccess, async (req: ProjectAuthRequest, res) => {
+// POST /:projectId/create-version - Create new version
+router.post('/:projectId/create-version', authenticateToken, authorizeProjectAccess, async (req: ProjectAuthRequest, res) => {
   try {
     const projectId = parseInt(req.params.projectId, 10);
     const userId = req.user?.userId!;
@@ -126,7 +102,29 @@ router.post('/:projectId/version', authenticateToken, authorizeProjectAccess, as
   }
 });
 
-// POST /api/v1/projects/:projectId/version/:versionNumber/rollback - Rollback project to a previous version
+// GET /:projectId/version/:versionNumber - Get specific version
+router.get('/:projectId/version/:versionNumber', authenticateToken, authorizeProjectAccess, async (req: ProjectAuthRequest, res) => {
+  try {
+    const projectId = parseInt(req.params.projectId, 10);
+    const versionNumber = parseInt(req.params.versionNumber, 10);
+
+    if (isNaN(versionNumber) || versionNumber < 1) {
+      return res.status(400).json({ error: 'Invalid version number' });
+    }
+
+    const version = await ProjectVersionsTable.getVersion(projectId, versionNumber);
+    if (!version) {
+      return res.status(404).json({ error: 'Version not found' });
+    }
+
+    res.json({ success: true, data: version.data });
+  } catch (error) {
+    console.error('Error fetching project version data:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /:projectId/version/:versionNumber/rollback - Rollback to version
 router.post('/:projectId/version/:versionNumber/rollback', authenticateToken, authorizeProjectAccess, async (req: ProjectAuthRequest, res) => {
   try {
     const projectId = parseInt(req.params.projectId, 10);
@@ -168,66 +166,7 @@ router.post('/:projectId/version/:versionNumber/rollback', authenticateToken, au
   }
 });
 
-// Auto-save project state
-router.post('/projects/:projectId/auto-save', authenticateToken, authorizeProjectAccess, async (req: ProjectAuthRequest, res) => {
-  try {
-    const projectId = parseInt(req.params.projectId, 10);
-    const userId = req.user?.userId!;
-    const { state } = req.body;
-
-    if (!userId || !projectId || !state) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
-
-    await ProjectAutoSaveTable.saveState({
-      project_id: projectId,
-      user_id: userId,
-      state,
-      timestamp: Math.floor(Date.now() / 1000)
-    });
-
-    // Clean up old auto-saves
-    await ProjectAutoSaveTable.cleanOldStates(projectId);
-
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error auto-saving project:', error);
-    res.status(500).json({ error: 'Failed to auto-save project' });
-  }
-});
-
-// Get latest auto-save
-router.get('/projects/:projectId/auto-save', authenticateToken, authorizeProjectAccess, async (req: ProjectAuthRequest, res) => {
-  try {
-    const projectId = parseInt(req.params.projectId, 10);
-    const userId = req.user?.userId!;
-
-    if (!userId || isNaN(projectId)) {
-      return res.status(400).json({ error: 'Invalid parameters' });
-    }
-
-    const state = await ProjectAutoSaveTable.getLatestState(projectId, userId);
-    res.json(state);
-  } catch (error) {
-    console.error('Error fetching auto-save:', error);
-    res.status(500).json({ error: 'Failed to fetch auto-save' });
-  }
-});
-
-// Get version audit history for a project
-router.get('/projects/:projectId/audit', authenticateToken, authorizeProjectAccess, async (req: ProjectAuthRequest, res) => {
-  try {
-    const projectId = parseInt(req.params.projectId, 10);
-    const auditHistory = await ProjectVersionsTable.getAuditHistory(projectId);
-    
-    res.json({ success: true, audit: auditHistory });
-  } catch (error) {
-    console.error('Error fetching audit history:', error);
-    res.status(500).json({ error: 'Failed to fetch audit history' });
-  }
-});
-
-// DELETE /api/v1/projects/:projectId/version/:versionNumber - Delete a specific version
+// DELETE /:projectId/version/:versionNumber - Delete version
 router.delete('/:projectId/version/:versionNumber', authenticateToken, authorizeProjectAccess, async (req: ProjectAuthRequest, res) => {
   try {
     const projectId = parseInt(req.params.projectId, 10);
@@ -265,33 +204,6 @@ router.delete('/:projectId/version/:versionNumber', authenticateToken, authorize
     const errorMessage = error.message || 'Internal server error';
     res.status(error.message?.includes('Cannot delete') ? 400 : 500)
       .json({ error: errorMessage });
-  }
-});
-
-// Cleanup old versions for a project
-router.post('/projects/:projectId/cleanup', authenticateToken, authorizeProjectAccess, async (req: ProjectAuthRequest, res) => {
-  try {
-    const projectId = parseInt(req.params.projectId, 10);
-    const { keepCount = 50 } = req.body;
-    const userId = req.user?.userId!;
-
-    const deletedCount = await ProjectVersionsTable.cleanupOldVersions(projectId, keepCount);
-
-    // Log audit event
-    await logAuditEvent({
-      userId,
-      action: 'cleanup_versions',
-      metadata: { projectId, deletedCount, keepCount }
-    });
-
-    res.json({ 
-      success: true, 
-      message: `Cleaned up ${deletedCount} old versions`,
-      deletedCount 
-    });
-  } catch (error) {
-    console.error('Error cleaning up versions:', error);
-    res.status(500).json({ error: 'Failed to cleanup versions' });
   }
 });
 

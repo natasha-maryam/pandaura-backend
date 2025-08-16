@@ -514,6 +514,42 @@ export class ProjectVersionsTable {
     console.log('✅ Enhanced project versions tables initialized');
   }
 
+  // Delete a specific version
+  static async deleteVersion(projectId: number, versionNumber: number, userId: string): Promise<void> {
+    try {
+      // Check if version exists
+      const version = await this.getVersion(projectId, versionNumber);
+      if (!version) {
+        throw new Error('Version not found');
+      }
+
+      // Don't allow deleting the latest version
+      const latestVersion = await this.getLatestVersionNumber(projectId);
+      if (versionNumber === latestVersion) {
+        throw new Error('Cannot delete the latest version');
+      }
+
+      // Delete the version
+      const stmt = db.prepare(`
+        DELETE FROM project_versions 
+        WHERE project_id = ? AND version_number = ?
+      `);
+
+      const result = stmt.run(projectId, versionNumber);
+      if (result.changes === 0) {
+        throw new Error('Failed to delete version');
+      }
+
+      // Log audit event
+      this.logVersionAudit(projectId, userId, 'delete', versionNumber, {
+        deletedVersion: versionNumber
+      });
+    } catch (error) {
+      console.error('Error deleting version:', error);
+      throw error;
+    }
+  }
+
   // Cleanup old versions (keep last N versions)
   static async cleanupOldVersions(projectId: number, keepCount: number = 50): Promise<number> {
     const stmt = db.prepare(`

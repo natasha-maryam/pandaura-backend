@@ -11,7 +11,7 @@ import orgRoutes from './routes/orgs';
 import testRoutes from './routes/test';
 import projectsRoutes from './routes/projects';
 import tagsRoutes from './routes/tags';
-import projectVersionsRoutes from './routes/project_versions';
+import projectVersionsRoutes from './routes/project_versions_new';
 import http from 'http';
 import { TagSyncService } from './services/tagSyncService';
 import { WebSocketServer } from 'ws';
@@ -86,8 +86,8 @@ app.use('/api/v1/orgs', orgRoutes);
 app.use('/api/v1/test', testRoutes);
 app.use('/api/v1/projects', projectsRoutes);
 app.use('/api/v1/tags', tagsRoutes);
-// Register version control routes
-app.use('/api/v1/versions', projectVersionsRoutes);
+// Register version control routes under projects
+app.use('/api/v1/projects', projectVersionsRoutes);
 
 // Log registered routes for debugging
 app.once('mount', () => {
