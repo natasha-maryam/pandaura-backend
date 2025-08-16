@@ -9,6 +9,7 @@ export interface Project {
   description?: string;
   target_plc_vendor?: 'siemens' | 'rockwell' | 'beckhoff';
   autosave_state?: string; // JSON string
+  metadata?: string; // JSON string
   created_at: string;
   updated_at: string;
 }
@@ -42,6 +43,7 @@ export class ProjectsTable {
         description TEXT,
         target_plc_vendor TEXT CHECK (target_plc_vendor IN ('siemens', 'rockwell', 'beckhoff')),
         autosave_state TEXT,
+        metadata TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE

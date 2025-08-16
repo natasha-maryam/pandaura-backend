@@ -86,7 +86,28 @@ app.use('/api/v1/orgs', orgRoutes);
 app.use('/api/v1/test', testRoutes);
 app.use('/api/v1/projects', projectsRoutes);
 app.use('/api/v1/tags', tagsRoutes);
+// Register version control routes
 app.use('/api/v1/versions', projectVersionsRoutes);
+
+// Log registered routes for debugging
+app.once('mount', () => {
+  console.log('\nRegistered Routes:');
+  console.log('=================');
+  console.log('GET     /api/v1/auth/*');
+  console.log('GET     /api/v1/orgs/*');
+  console.log('GET     /api/v1/test/*');
+  console.log('GET     /api/v1/projects/*');
+  console.log('GET     /api/v1/tags/*');
+  console.log('GET     /api/v1/versions/projects/:projectId/versions');
+  console.log('GET     /api/v1/versions/projects/:projectId/version/:versionNumber');
+  console.log('POST    /api/v1/versions/projects/:projectId/version');
+  console.log('POST    /api/v1/versions/projects/:projectId/version/:versionNumber/rollback');
+  console.log('POST    /api/v1/versions/projects/:projectId/auto-save');
+  console.log('GET     /api/v1/versions/projects/:projectId/auto-save');
+  console.log('GET     /api/v1/versions/projects/:projectId/audit');
+  console.log('POST    /api/v1/versions/projects/:projectId/cleanup');
+  console.log('=================\n');
+});
 
 
 // Add a simple test route
