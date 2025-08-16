@@ -13,6 +13,7 @@ const orgs_1 = __importDefault(require("./routes/orgs"));
 const test_1 = __importDefault(require("./routes/test"));
 const projects_1 = __importDefault(require("./routes/projects"));
 const tags_1 = __importDefault(require("./routes/tags"));
+const project_versions_1 = __importDefault(require("./routes/project_versions"));
 const app = (0, express_1.default)();
 const port = process.env.PORT || 5000;
 // Security middleware
@@ -69,6 +70,7 @@ app.use('/api/v1/orgs', orgs_1.default);
 app.use('/api/v1/test', test_1.default);
 app.use('/api/v1/projects', projects_1.default);
 app.use('/api/v1/tags', tags_1.default);
+app.use('/api/v1/versions', project_versions_1.default);
 // Add a simple test route
 app.get('/api/v1/simple-test', (req, res) => {
     console.log('Simple test route hit!');

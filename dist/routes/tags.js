@@ -11,6 +11,7 @@ const projects_1 = require("../db/tables/projects");
 const auditLogger_1 = require("../middleware/auditLogger");
 const beckhoffTagIO_1 = require("../utils/beckhoffTagIO");
 const rockwellTagIO_1 = require("../utils/rockwellTagIO");
+const siemensTagIO_1 = require("../utils/siemensTagIO");
 const vendorFormatters_1 = require("../utils/vendorFormatters");
 const router = express_1.default.Router();
 // Configure multer for file uploads
@@ -36,6 +37,19 @@ function validateTagType(type) {
         throw new Error(`Invalid tag type. Must be one of: ${validTypes.join(', ')}`);
     }
     return type;
+}
+function validateTagTypeForVendor(type, vendor) {
+    const validatedType = validateTagType(type);
+    // Vendor-specific data type restrictions
+    const vendorDataTypes = {
+        rockwell: ['BOOL', 'INT', 'DINT', 'REAL', 'STRING', 'TIMER', 'COUNTER'],
+        siemens: ['BOOL', 'INT', 'DINT', 'REAL', 'STRING'], // Siemens doesn't support TIMER/COUNTER
+        beckhoff: ['BOOL', 'INT', 'DINT', 'REAL', 'STRING', 'TIMER', 'COUNTER']
+    };
+    if (!vendorDataTypes[vendor].includes(validatedType)) {
+        throw new Error(`Data type '${type}' is not supported by ${vendor.charAt(0).toUpperCase() + vendor.slice(1)}. Supported types: ${vendorDataTypes[vendor].join(', ')}`);
+    }
+    return validatedType;
 }
 function validateVendor(vendor) {
     const validVendors = ['rockwell', 'siemens', 'beckhoff'];
@@ -161,8 +175,8 @@ router.post('/', authMiddleware_1.authenticateToken, async (req, res) => {
         }
         // Validate required fields
         const validatedName = validateTagName(name);
-        const validatedType = validateTagType(type);
         const validatedVendor = validateVendor(vendor);
+        const validatedType = validateTagTypeForVendor(type, validatedVendor);
         const validatedScope = validateScope(scope);
         const validatedTagType = validateTagTypeCategory(tag_type);
         const validatedAddress = validateAddress(address);
@@ -276,16 +290,40 @@ router.put('/:id', authMiddleware_1.authenticateToken, async (req, res) => {
             updateData.name = validateTagName(name);
         if (description !== undefined)
             updateData.description = description;
-        if (type !== undefined)
-            updateData.type = validateTagType(type);
+        // For type and vendor validation, we need to consider both fields together
+        // Also needed for address validation
+        let existingTag = null;
+        if (type !== undefined || vendor !== undefined || address !== undefined) {
+            // Get the current tag to check existing vendor/type values
+            existingTag = tags_1.TagsTable.getTagById(tagId, userId);
+            if (!existingTag) {
+                return res.status(404).json({ error: 'Tag not found or access denied' });
+            }
+        }
+        if (type !== undefined || vendor !== undefined) {
+            const finalVendor = vendor !== undefined ? validateVendor(vendor) : existingTag.vendor;
+            const finalType = type !== undefined ? type : existingTag.type;
+            // Validate the type is supported by the vendor
+            const validatedType = validateTagTypeForVendor(finalType, finalVendor);
+            if (type !== undefined)
+                updateData.type = validatedType;
+            if (vendor !== undefined)
+                updateData.vendor = finalVendor;
+        }
         if (data_type !== undefined)
             updateData.data_type = data_type;
-        if (address !== undefined)
-            updateData.address = validateAddress(address);
+        if (address !== undefined) {
+            // Validate address format based on vendor
+            const finalVendor = (vendor !== undefined ? updateData.vendor : existingTag.vendor);
+            const addressValidated = validateAddress(address);
+            const isValidForVendor = (0, vendorFormatters_1.validateAddressForVendor)(address, finalVendor);
+            if (!isValidForVendor) {
+                throw new Error(`Invalid address format '${address}' for ${finalVendor.charAt(0).toUpperCase() + finalVendor.slice(1)} vendor`);
+            }
+            updateData.address = addressValidated;
+        }
         if (default_value !== undefined)
             updateData.default_value = default_value;
-        if (vendor !== undefined)
-            updateData.vendor = validateVendor(vendor);
         if (scope !== undefined)
             updateData.scope = validateScope(scope);
         if (tag_type !== undefined)
@@ -797,6 +835,84 @@ router.get('/projects/:projectId/export/rockwell/l5x', authMiddleware_1.authenti
         });
     }
 });
+// Export Siemens CSV tags
+router.get('/projects/:projectId/export/siemens/csv', authMiddleware_1.authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user?.userId;
+        if (!userId) {
+            return res.status(401).json({ error: 'User not authenticated' });
+        }
+        const projectId = parseInt(req.params.projectId);
+        if (isNaN(projectId)) {
+            return res.status(400).json({ error: 'Invalid project ID' });
+        }
+        // Verify project exists and user has access
+        const project = projects_1.ProjectsTable.getProjectById(projectId, userId);
+        if (!project) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+        // Set response headers for file download
+        const filename = `${project.project_name.replace(/[^a-zA-Z0-9]/g, '_')}_siemens_tags.csv`;
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        // Export directly to response stream
+        await (0, siemensTagIO_1.exportSiemensCsv)(projectId, res);
+        await (0, auditLogger_1.logAuditEvent)({
+            userId: userId,
+            action: 'EXPORT_SIEMENS_CSV',
+            metadata: {
+                resource_type: 'tags',
+                resource_id: projectId,
+                filename: filename
+            }
+        });
+    }
+    catch (error) {
+        console.error('Error exporting Siemens CSV:', error);
+        res.status(500).json({
+            error: error instanceof Error ? error.message : 'Failed to export Siemens CSV'
+        });
+    }
+});
+// Export Siemens XML tags
+router.get('/projects/:projectId/export/siemens/xml', authMiddleware_1.authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user?.userId;
+        if (!userId) {
+            return res.status(401).json({ error: 'User not authenticated' });
+        }
+        const projectId = parseInt(req.params.projectId);
+        if (isNaN(projectId)) {
+            return res.status(400).json({ error: 'Invalid project ID' });
+        }
+        // Verify project exists and user has access
+        const project = projects_1.ProjectsTable.getProjectById(projectId, userId);
+        if (!project) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+        // Set response headers for file download
+        const filename = `${project.project_name.replace(/[^a-zA-Z0-9]/g, '_')}_siemens_tags.xml`;
+        res.setHeader('Content-Type', 'application/xml');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        // Export directly to response stream
+        await (0, siemensTagIO_1.exportSiemensXml)(projectId, res);
+        await (0, auditLogger_1.logAuditEvent)({
+            userId: userId,
+            action: 'EXPORT_SIEMENS_XML',
+            metadata: {
+                resource_type: 'tags',
+                resource_id: projectId,
+                filename: filename
+            }
+        });
+    }
+    catch (error) {
+        console.error('Error exporting Siemens XML:', error);
+        res.status(500).json({
+            error: error instanceof Error ? error.message : 'Failed to export Siemens XML'
+        });
+    }
+});
 // Import Rockwell CSV tags
 router.post('/projects/:projectId/import/rockwell/csv', authMiddleware_1.authenticateToken, upload.single('file'), async (req, res) => {
     try {
@@ -884,6 +1000,51 @@ router.post('/projects/:projectId/import/rockwell/l5x', authMiddleware_1.authent
         console.error('Error importing Rockwell L5X:', error);
         res.status(500).json({
             error: error instanceof Error ? error.message : 'Failed to import Rockwell L5X'
+        });
+    }
+});
+// Import Siemens CSV tags
+router.post('/projects/:projectId/import/siemens/csv', authMiddleware_1.authenticateToken, upload.single('file'), async (req, res) => {
+    try {
+        const userId = req.user?.userId;
+        if (!userId) {
+            return res.status(401).json({ error: 'User not authenticated' });
+        }
+        const projectId = parseInt(req.params.projectId);
+        if (isNaN(projectId)) {
+            return res.status(400).json({ error: 'Invalid project ID' });
+        }
+        // Verify project exists and user has access
+        const project = projects_1.ProjectsTable.getProjectById(projectId, userId);
+        if (!project) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+        if (!req.file) {
+            return res.status(400).json({ error: 'No file uploaded' });
+        }
+        if (!req.file.mimetype.includes('csv') && !req.file.originalname?.toLowerCase().endsWith('.csv')) {
+            return res.status(400).json({ error: 'File must be a CSV file' });
+        }
+        const result = await (0, siemensTagIO_1.importSiemensCsv)(req.file.buffer, projectId, userId);
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+        await (0, auditLogger_1.logAuditEvent)({
+            userId: userId,
+            action: 'IMPORT_SIEMENS_CSV',
+            metadata: {
+                resource_type: 'tags',
+                resource_id: projectId,
+                imported_count: result.inserted,
+                filename: req.file.originalname
+            }
+        });
+        res.json(result);
+    }
+    catch (error) {
+        console.error('Error importing Siemens CSV:', error);
+        res.status(500).json({
+            error: error instanceof Error ? error.message : 'Failed to import Siemens CSV'
         });
     }
 });

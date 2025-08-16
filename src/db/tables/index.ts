@@ -5,6 +5,8 @@ import { createDeviceBindingsTable } from './deviceBindings';
 import { createAuditLogsTable } from './activityLog';
 import { ProjectsTable } from './projects';
 import { TagsTable } from './tags';
+import { ProjectAutoSaveTable } from './project_autosave';
+import { ProjectVersionsTable } from './project_versions';
 
 export function initializeTables() {
   createOrganizationsTable();
@@ -15,4 +17,6 @@ export function initializeTables() {
   createAuditLogsTable();
   ProjectsTable.initializeTable();
   TagsTable.initializeTable();
+  ProjectAutoSaveTable.initTable();
+  ProjectVersionsTable.initTable();
 }

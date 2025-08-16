@@ -51,6 +51,7 @@ const HEADER_MAP = {
     'tagname': 'name',
     'name': 'name',
     'tag name': 'name',
+    'data_type': 'data_type', // Add exact match for data_type
     'datatype': 'data_type',
     'data type': 'data_type',
     'type': 'data_type',
@@ -58,7 +59,9 @@ const HEADER_MAP = {
     'description': 'description',
     'comment': 'description',
     'address': 'address',
+    'external_access': 'external_access',
     'external access': 'external_access',
+    'default_value': 'default_value',
     'default value': 'default_value',
     'initial value': 'default_value',
     // Sometimes 'Tag' or 'Symbol' in exports
@@ -161,12 +164,24 @@ function validateAndMapRockwellRow(row, projectId, userId) {
             errors.push(`Unsupported Rockwell data type: ${row.data_type}`);
         }
     }
-    // Basic address validation: Rockwell addresses can be %I, %Q, or symbolic
+    // Rockwell address validation: supports I:x/y, O:x/y, Nxx:y, Fxx:y, and symbolic names
     if (row.address) {
         const addr = row.address.trim();
-        if (!addr.match(/^%[I|Q|M|T|C]\d+(\.\d+)?$/i) && !addr.match(/^[a-zA-Z_][\w]*$/)) {
-            // Address is neither symbolic nor classic PLC address format
-            errors.push(`Invalid Rockwell address format: ${row.address}`);
+        const rockwellPatterns = [
+            /^I:\d+\/\d+$/i, // Input: I:1/0
+            /^O:\d+\/\d+$/i, // Output: O:2/0  
+            /^N\d+:\d+$/i, // Integer: N7:0
+            /^F\d+:\d+$/i, // Float: F8:0
+            /^B\d+:\d+$/i, // Binary: B3:0
+            /^T\d+:\d+$/i, // Timer: T4:0
+            /^C\d+:\d+$/i, // Counter: C5:0
+            /^R\d+:\d+$/i, // Control: R6:0
+            /^S\d+:\d+$/i, // String: S2:0
+            /^[A-Za-z_][A-Za-z0-9_]*$/ // Symbolic: MyTag_1
+        ];
+        const isValidAddress = rockwellPatterns.some(pattern => pattern.test(addr));
+        if (!isValidAddress) {
+            errors.push(`Invalid Rockwell address format: ${row.address}. Expected formats: I:x/y, O:x/y, Nx:y, Fx:y, or symbolic name`);
         }
     }
     if (errors.length > 0) {

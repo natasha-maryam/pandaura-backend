@@ -10,6 +10,7 @@ import orgRoutes from './routes/orgs';
 import testRoutes from './routes/test';
 import projectsRoutes from './routes/projects';
 import tagsRoutes from './routes/tags';
+import projectVersionsRoutes from './routes/project_versions';
 
 
 const app = express();
@@ -79,6 +80,7 @@ app.use('/api/v1/orgs', orgRoutes);
 app.use('/api/v1/test', testRoutes);
 app.use('/api/v1/projects', projectsRoutes);
 app.use('/api/v1/tags', tagsRoutes);
+app.use('/api/v1/versions', projectVersionsRoutes);
 
 
 // Add a simple test route

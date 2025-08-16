@@ -1,7 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/authMiddleware';
-import { TagsTable, CreateTagData, UpdateTagData } from '../db/tables/tags';
+import { TagsTable, CreateTagData, UpdateTagData, Tag } from '../db/tables/tags';
 import { ProjectsTable } from '../db/tables/projects';
 import { logAuditEvent } from '../middleware/auditLogger';
 import { 
@@ -17,12 +17,14 @@ import {
   exportRockwellL5X
 } from '../utils/rockwellTagIO';
 import {
+  importSiemensCsv,
+  exportSiemensCsv,
+  exportSiemensXml
+} from '../utils/siemensTagIO';
+import {
   formatTagForVendor,
   validateAddressForVendor,
   type VendorTag,
-  type RockwellTag,
-  type SiemensTag,
-  type BeckhoffTag
 } from '../utils/vendorFormatters';
 
 const router = express.Router();
@@ -52,6 +54,23 @@ function validateTagType(type: any): 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'STRING'
     throw new Error(`Invalid tag type. Must be one of: ${validTypes.join(', ')}`);
   }
   return type;
+}
+
+function validateTagTypeForVendor(type: any, vendor: 'rockwell' | 'siemens' | 'beckhoff'): 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'STRING' | 'TIMER' | 'COUNTER' {
+  const validatedType = validateTagType(type);
+  
+  // Vendor-specific data type restrictions
+  const vendorDataTypes = {
+    rockwell: ['BOOL', 'INT', 'DINT', 'REAL', 'STRING', 'TIMER', 'COUNTER'],
+    siemens: ['BOOL', 'INT', 'DINT', 'REAL', 'STRING'],  // Siemens doesn't support TIMER/COUNTER
+    beckhoff: ['BOOL', 'INT', 'DINT', 'REAL', 'STRING', 'TIMER', 'COUNTER']
+  };
+
+  if (!vendorDataTypes[vendor].includes(validatedType)) {
+    throw new Error(`Data type '${type}' is not supported by ${vendor.charAt(0).toUpperCase() + vendor.slice(1)}. Supported types: ${vendorDataTypes[vendor].join(', ')}`);
+  }
+  
+  return validatedType;
 }
 
 function validateVendor(vendor: any): 'rockwell' | 'siemens' | 'beckhoff' {
@@ -215,8 +234,8 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res) => {
 
     // Validate required fields
     const validatedName = validateTagName(name);
-    const validatedType = validateTagType(type);
     const validatedVendor = validateVendor(vendor);
+    const validatedType = validateTagTypeForVendor(type, validatedVendor);
     const validatedScope = validateScope(scope);
     const validatedTagType = validateTagTypeCategory(tag_type);
     const validatedAddress = validateAddress(address);
@@ -352,11 +371,43 @@ router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res) => 
 
     if (name !== undefined) updateData.name = validateTagName(name);
     if (description !== undefined) updateData.description = description;
-    if (type !== undefined) updateData.type = validateTagType(type);
+    
+    // For type and vendor validation, we need to consider both fields together
+    // Also needed for address validation
+    let existingTag: Tag | null = null;
+    if (type !== undefined || vendor !== undefined || address !== undefined) {
+      // Get the current tag to check existing vendor/type values
+      existingTag = TagsTable.getTagById(tagId, userId);
+      if (!existingTag) {
+        return res.status(404).json({ error: 'Tag not found or access denied' });
+      }
+    }
+    
+    if (type !== undefined || vendor !== undefined) {
+      const finalVendor = vendor !== undefined ? validateVendor(vendor) : existingTag!.vendor;
+      const finalType = type !== undefined ? type : existingTag!.type;
+      
+      // Validate the type is supported by the vendor
+      const validatedType = validateTagTypeForVendor(finalType, finalVendor);
+      
+      if (type !== undefined) updateData.type = validatedType;
+      if (vendor !== undefined) updateData.vendor = finalVendor;
+    }
+    
     if (data_type !== undefined) updateData.data_type = data_type;
-    if (address !== undefined) updateData.address = validateAddress(address);
+    if (address !== undefined) {
+      // Validate address format based on vendor
+      const finalVendor = (vendor !== undefined ? updateData.vendor : existingTag!.vendor) as 'rockwell' | 'siemens' | 'beckhoff';
+      const addressValidated = validateAddress(address);
+      const isValidForVendor = validateAddressForVendor(address, finalVendor);
+      
+      if (!isValidForVendor) {
+        throw new Error(`Invalid address format '${address}' for ${finalVendor.charAt(0).toUpperCase() + finalVendor.slice(1)} vendor`);
+      }
+      
+      updateData.address = addressValidated;
+    }
     if (default_value !== undefined) updateData.default_value = default_value;
-    if (vendor !== undefined) updateData.vendor = validateVendor(vendor);
     if (scope !== undefined) updateData.scope = validateScope(scope);
     if (tag_type !== undefined) updateData.tag_type = validateTagTypeCategory(tag_type);
     if (is_ai_generated !== undefined) updateData.is_ai_generated = Boolean(is_ai_generated);
@@ -942,6 +993,96 @@ router.get('/projects/:projectId/export/rockwell/l5x', authenticateToken, async 
   }
 });
 
+// Export Siemens CSV tags
+router.get('/projects/:projectId/export/siemens/csv', authenticateToken, async (req, res) => {
+  try {
+    const userId = (req as AuthenticatedRequest).user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const projectId = parseInt(req.params.projectId);
+    if (isNaN(projectId)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+
+    // Verify project exists and user has access
+    const project = ProjectsTable.getProjectById(projectId, userId);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    // Set response headers for file download
+    const filename = `${project.project_name.replace(/[^a-zA-Z0-9]/g, '_')}_siemens_tags.csv`;
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    // Export directly to response stream
+    await exportSiemensCsv(projectId, res);
+
+    await logAuditEvent({
+      userId: userId,
+      action: 'EXPORT_SIEMENS_CSV',
+      metadata: {
+        resource_type: 'tags',
+        resource_id: projectId,
+        filename: filename
+      }
+    });
+
+  } catch (error) {
+    console.error('Error exporting Siemens CSV:', error);
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Failed to export Siemens CSV' 
+    });
+  }
+});
+
+// Export Siemens XML tags
+router.get('/projects/:projectId/export/siemens/xml', authenticateToken, async (req, res) => {
+  try {
+    const userId = (req as AuthenticatedRequest).user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const projectId = parseInt(req.params.projectId);
+    if (isNaN(projectId)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+
+    // Verify project exists and user has access
+    const project = ProjectsTable.getProjectById(projectId, userId);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    // Set response headers for file download
+    const filename = `${project.project_name.replace(/[^a-zA-Z0-9]/g, '_')}_siemens_tags.xml`;
+    res.setHeader('Content-Type', 'application/xml');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    // Export directly to response stream
+    await exportSiemensXml(projectId, res);
+
+    await logAuditEvent({
+      userId: userId,
+      action: 'EXPORT_SIEMENS_XML',
+      metadata: {
+        resource_type: 'tags',
+        resource_id: projectId,
+        filename: filename
+      }
+    });
+
+  } catch (error) {
+    console.error('Error exporting Siemens XML:', error);
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Failed to export Siemens XML' 
+    });
+  }
+});
+
 // Import Rockwell CSV tags
 router.post('/projects/:projectId/import/rockwell/csv', authenticateToken, upload.single('file'), async (req, res) => {
   try {
@@ -1046,6 +1187,60 @@ router.post('/projects/:projectId/import/rockwell/l5x', authenticateToken, uploa
     console.error('Error importing Rockwell L5X:', error);
     res.status(500).json({ 
       error: error instanceof Error ? error.message : 'Failed to import Rockwell L5X' 
+    });
+  }
+});
+
+// Import Siemens CSV tags
+router.post('/projects/:projectId/import/siemens/csv', authenticateToken, upload.single('file'), async (req, res) => {
+  try {
+    const userId = (req as AuthenticatedRequest).user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const projectId = parseInt(req.params.projectId);
+    if (isNaN(projectId)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+
+    // Verify project exists and user has access
+    const project = ProjectsTable.getProjectById(projectId, userId);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    if (!req.file.mimetype.includes('csv') && !req.file.originalname?.toLowerCase().endsWith('.csv')) {
+      return res.status(400).json({ error: 'File must be a CSV file' });
+    }
+
+    const result = await importSiemensCsv(req.file.buffer, projectId, userId);
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    await logAuditEvent({
+      userId: userId,
+      action: 'IMPORT_SIEMENS_CSV',
+      metadata: {
+        resource_type: 'tags',
+        resource_id: projectId,
+        imported_count: result.inserted,
+        filename: req.file.originalname
+      }
+    });
+
+    res.json(result);
+
+  } catch (error) {
+    console.error('Error importing Siemens CSV:', error);
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Failed to import Siemens CSV' 
     });
   }
 });
