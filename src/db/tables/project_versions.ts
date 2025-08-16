@@ -84,14 +84,14 @@ export class ProjectVersionsTable {
       const latestVersion = await this.getLatestVersionNumber(projectId);
       const nextVersion = latestVersion + 1;
 
-      // Insert new version
-      const stmt = db.prepare(`
-        INSERT INTO project_versions 
+    // Insert new version
+    const stmt = db.prepare(`
+      INSERT INTO project_versions 
         (project_id, user_id, version_number, data, created_at, message, is_auto) 
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `);
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
 
-      const result = stmt.run(
+    const result = stmt.run(
         projectId,
         userId,
         nextVersion,
@@ -189,6 +189,10 @@ export class ProjectVersionsTable {
 
       // Start transaction
       const transaction = db.transaction(() => {
+        // 1. Check if metadata column exists
+        const tableInfo = db.prepare(`PRAGMA table_info(projects)`).all();
+        const hasMetadataColumn = tableInfo.some((col: any) => col.name === 'metadata');
+
         // 1. Update project metadata in projects table
         const updateProjectStmt = db.prepare(`
           UPDATE projects SET
@@ -197,28 +201,33 @@ export class ProjectVersionsTable {
             project_type = ?,
             description = ?,
             target_plc_vendor = ?,
-            metadata = ?,
+            ${hasMetadataColumn ? 'metadata = ?,' : ''}
             updated_at = ?
           WHERE id = ?
         `);
 
-        updateProjectStmt.run(
+        const params = [
           snapshot.projectMetadata.project_name,
           snapshot.projectMetadata.client_name,
           snapshot.projectMetadata.project_type,
           snapshot.projectMetadata.description,
-          snapshot.projectMetadata.target_plc_vendor,
-          JSON.stringify(snapshot.projectMetadata.metadata || {}),
-          new Date().toISOString(),
-          projectId
-        );
+          snapshot.projectMetadata.target_plc_vendor
+        ];
+
+        if (hasMetadataColumn) {
+          params.push(JSON.stringify(snapshot.projectMetadata.metadata || {}));
+        }
+
+        params.push(new Date().toISOString(), projectId.toString());
+
+        updateProjectStmt.run(...params);
 
         // 2. Restore autosave state if it exists
         if (snapshot.autosaveState) {
           const { ProjectAutoSaveTable } = require('./project_autosave');
           ProjectAutoSaveTable.saveState({
-            project_id: projectId,
-            user_id: userId,
+      project_id: projectId,
+      user_id: userId,
             state: snapshot.autosaveState,
             timestamp: Math.floor(Date.now() / 1000)
           });
@@ -227,7 +236,7 @@ export class ProjectVersionsTable {
         // 3. Create new version representing this rollback
         const rollbackSnapshot: ProjectVersionSnapshot = {
           ...snapshot,
-          timestamp: Math.floor(Date.now() / 1000),
+      timestamp: Math.floor(Date.now() / 1000),
           version_info: {
             created_by: userId,
             created_at: new Date().toISOString(),
@@ -367,7 +376,7 @@ export class ProjectVersionsTable {
 
         // Create new table with updated schema
         db.prepare(`
-          CREATE TABLE IF NOT EXISTS project_versions (
+      CREATE TABLE IF NOT EXISTS project_versions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id INTEGER NOT NULL,
             user_id TEXT NOT NULL,
