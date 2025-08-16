@@ -115,17 +115,22 @@ export class TagSyncService {
       console.log(`🏓 Pong received from user: ${ws.user?.userId || 'unknown'}`);
     });
 
-    // Send a welcome message to confirm connection
-    try {
-      this.sendResponse(ws, {
-        type: 'pong',
-        success: true,
-        timestamp: new Date().toISOString()
-      });
-      console.log(`✅ Welcome message sent to user: ${ws.user?.userId || 'unknown'}`);
-    } catch (error) {
-      console.error(`❌ Failed to send welcome message:`, error);
-    }
+    // Don't send immediate welcome message - let the client initiate communication
+    console.log(`✅ WebSocket connection ready for user: ${ws.user?.userId || 'unknown'}`);
+
+    // Send a simple connection confirmation after a small delay
+    setTimeout(() => {
+      try {
+        this.sendResponse(ws, {
+          type: 'pong',
+          success: true,
+          timestamp: new Date().toISOString()
+        });
+        console.log(`✅ Connection confirmation sent to user: ${ws.user?.userId || 'unknown'}`);
+      } catch (error) {
+        console.error(`❌ Failed to send connection confirmation:`, error);
+      }
+    }, 100);
   }
 
   /**
@@ -288,9 +293,8 @@ export class TagSyncService {
       });
 
       // Upsert tags in database
-      // Convert userId string to number or use 1 as fallback
-      const userIdNum = ws.user!.userId ? parseInt(ws.user!.userId) || 1 : 1;
-      await this.upsertTagsInDB(message.projectId, formattedTags, userIdNum);
+      console.log(`🔍 Debug: Project ID: ${message.projectId}, User ID: ${ws.user!.userId}`);
+      await this.upsertTagsInDB(message.projectId, formattedTags, ws.user!.userId);
       console.log(`💾 Upserted ${formattedTags.length} tags to database`);
 
       // Fetch updated tags
@@ -323,9 +327,15 @@ export class TagSyncService {
   /**
    * Upsert tags in database with transaction
    */
-  private async upsertTagsInDB(projectId: string, tags: any[], userId: number) {
+  private async upsertTagsInDB(projectId: string, tags: any[], userId: string) {
+    console.log(`🔍 Upserting tags for project ${projectId}, user ${userId}`);
+
+    // Check if project and user exist
+    const projectIdNum = parseInt(projectId);
+    console.log(`🔍 Checking if project ${projectIdNum} and user ${userId} exist in database...`);
+
     // Fetch all existing tags for the project once
-    const existingTagsResult = TagsTable.getTags({ project_id: parseInt(projectId), page_size: 1000 });
+    const existingTagsResult = TagsTable.getTags({ project_id: projectIdNum, page_size: 1000 });
     const existingTags = existingTagsResult.tags;
 
     for (const tag of tags) {
@@ -346,7 +356,7 @@ export class TagSyncService {
           });
         } else {
           // Create new tag
-          TagsTable.createTag({
+          const tagData = {
             project_id: parseInt(projectId),
             user_id: String(userId),
             name: tagName,
@@ -357,9 +367,12 @@ export class TagSyncService {
             default_value: tag.DefaultValue || tag.defaultValue,
             vendor: (tag.Vendor || tag.vendor)?.toLowerCase(),
             scope: (tag.Scope || tag.scope || 'local').toLowerCase(),
-            tag_type: 'memory', // default, adjust as needed
+            tag_type: 'memory' as const, // default, adjust as needed
             is_ai_generated: false
-          });
+          };
+
+          console.log(`🔍 Creating tag with data:`, JSON.stringify(tagData, null, 2));
+          TagsTable.createTag(tagData);
         }
       } catch (error) {
         console.error(`Error upserting tag ${tag.Name || tag.TagName || tag.name}:`, error);
