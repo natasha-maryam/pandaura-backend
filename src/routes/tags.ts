@@ -21,6 +21,7 @@ import {
   exportSiemensCsv,
   exportSiemensXml
 } from '../utils/siemensTagIO';
+import { importSiemensTags } from '../services/tagImportService';
 import {
   formatTagForVendor,
   validateAddressForVendor,
@@ -48,30 +49,37 @@ function validateTagName(name: any): string {
   return name.trim();
 }
 
-function validateTagType(type: any): 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'STRING' | 'TIMER' | 'COUNTER' {
-  const validTypes = ['BOOL', 'INT', 'DINT', 'REAL', 'STRING', 'TIMER', 'COUNTER'];
+function validateTagType(type: any): 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'STRING' {
+  const validTypes = ['BOOL', 'INT', 'DINT', 'REAL', 'STRING',];
   if (!type || !validTypes.includes(type)) {
     throw new Error(`Invalid tag type. Must be one of: ${validTypes.join(', ')}`);
   }
   return type;
 }
 
-function validateTagTypeForVendor(type: any, vendor: 'rockwell' | 'siemens' | 'beckhoff'): 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'STRING' | 'TIMER' | 'COUNTER' {
-  const validatedType = validateTagType(type);
-  
-  // Vendor-specific data type restrictions
-  const vendorDataTypes = {
-    rockwell: ['BOOL', 'INT', 'DINT', 'REAL', 'STRING', 'TIMER', 'COUNTER'],
-    siemens: ['BOOL', 'INT', 'DINT', 'REAL', 'STRING'],  // Siemens doesn't support TIMER/COUNTER
-    beckhoff: ['BOOL', 'INT', 'DINT', 'REAL', 'STRING', 'TIMER', 'COUNTER']
-  };
+  function validateTagTypeForVendor(type: any, vendor: 'rockwell' | 'siemens' | 'beckhoff'): string {
+    // For Beckhoff allow any non-empty string (custom types allowed)
+    if (vendor === 'beckhoff') {
+      if (!type || typeof type !== 'string' || type.trim().length === 0) {
+        throw new Error('Invalid tag type for Beckhoff. Type must be a non-empty string');
+      }
+      return type.trim();
+    }
 
-  if (!vendorDataTypes[vendor].includes(validatedType)) {
-    throw new Error(`Data type '${type}' is not supported by ${vendor.charAt(0).toUpperCase() + vendor.slice(1)}. Supported types: ${vendorDataTypes[vendor].join(', ')}`);
+    // For other vendors, enforce known set
+    const validatedType = validateTagType(type);
+    // Vendor-specific data type restrictions
+    const vendorDataTypes: Record<string, string[]> = {
+      rockwell: ['BOOL', 'INT', 'DINT', 'REAL', 'STRING'],
+      siemens: ['BOOL', 'INT', 'DINT', 'REAL', 'STRING']
+    };
+
+    if (!vendorDataTypes[vendor].includes(validatedType)) {
+      throw new Error(`Data type '${type}' is not supported by ${vendor.charAt(0).toUpperCase() + vendor.slice(1)}. Supported types: ${vendorDataTypes[vendor].join(', ')}`);
+    }
+
+    return validatedType;
   }
-  
-  return validatedType;
-}
 
 function validateVendor(vendor: any): 'rockwell' | 'siemens' | 'beckhoff' {
   const validVendors = ['rockwell', 'siemens', 'beckhoff'];
@@ -82,7 +90,7 @@ function validateVendor(vendor: any): 'rockwell' | 'siemens' | 'beckhoff' {
 }
 
 function validateScope(scope: any): 'global' | 'local' | 'input' | 'output' {
-  const validScopes = ['global', 'local', 'input', 'output'];
+  const validScopes = ['global', 'local', 'input', 'output', 'internal'];
   if (!scope || !validScopes.includes(scope.toLowerCase())) {
     throw new Error(`Invalid scope. Must be one of: ${validScopes.join(', ')}`);
   }
@@ -236,6 +244,14 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res) => {
     const validatedName = validateTagName(name);
     const validatedVendor = validateVendor(vendor);
     const validatedType = validateTagTypeForVendor(type, validatedVendor);
+    // If Beckhoff and a custom type (not one of base types), store it in data_type and use a safe base type for `type`
+    const baseTypes = ['BOOL', 'INT', 'DINT', 'REAL', 'STRING'];
+    let dbTypeForCreate: CreateTagData['type'] = (validatedType as any) as CreateTagData['type'];
+    let dataTypeToStore = data_type || validatedType;
+    if (validatedVendor === 'beckhoff' && !baseTypes.includes(validatedType.toUpperCase())) {
+      dataTypeToStore = validatedType;
+      dbTypeForCreate = 'DINT'; // fallback base type to satisfy DB CHECK
+    }
     const validatedScope = validateScope(scope);
     const validatedTagType = validateTagTypeCategory(tag_type);
     const validatedAddress = validateAddress(address);
@@ -245,8 +261,8 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res) => {
       user_id: userId,
       name: validatedName,
       description: description || '',
-      type: validatedType,
-      data_type: data_type || validatedType,
+      type: dbTypeForCreate,
+      data_type: dataTypeToStore,
       address: validatedAddress,
       default_value: default_value || '',
       vendor: validatedVendor,
@@ -306,7 +322,7 @@ router.get('/:id', authenticateToken, async (req: AuthenticatedRequest, res) => 
     }
 
     const tagId = req.params.id;
-    const tag = TagsTable.getTagById(tagId, userId);
+  const tag = TagsTable.getById(tagId);
 
     if (!tag) {
       return res.status(404).json({ error: 'Tag not found or access denied' });
@@ -377,7 +393,7 @@ router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res) => 
     let existingTag: Tag | null = null;
     if (type !== undefined || vendor !== undefined || address !== undefined) {
       // Get the current tag to check existing vendor/type values
-      existingTag = TagsTable.getTagById(tagId, userId);
+  existingTag = TagsTable.getById(tagId);
       if (!existingTag) {
         return res.status(404).json({ error: 'Tag not found or access denied' });
       }
@@ -386,11 +402,23 @@ router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res) => 
     if (type !== undefined || vendor !== undefined) {
       const finalVendor = vendor !== undefined ? validateVendor(vendor) : existingTag!.vendor;
       const finalType = type !== undefined ? type : existingTag!.type;
-      
-      // Validate the type is supported by the vendor
+
+      // Validate the type is supported by the vendor (may return custom string for Beckhoff)
       const validatedType = validateTagTypeForVendor(finalType, finalVendor);
-      
-      if (type !== undefined) updateData.type = validatedType;
+
+    const baseTypes = ['BOOL', 'INT', 'DINT', 'REAL', 'STRING'];
+
+      if (type !== undefined) {
+        if (finalVendor === 'beckhoff' && !baseTypes.includes(validatedType.toUpperCase())) {
+          // store custom type in data_type and use a safe base type for `type`
+          updateData.data_type = validatedType;
+          updateData.type = 'DINT';
+        } else {
+          // regular base type
+          updateData.type = validatedType as any;
+        }
+      }
+
       if (vendor !== undefined) updateData.vendor = finalVendor;
     }
     
@@ -412,7 +440,7 @@ router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res) => 
     if (tag_type !== undefined) updateData.tag_type = validateTagTypeCategory(tag_type);
     if (is_ai_generated !== undefined) updateData.is_ai_generated = Boolean(is_ai_generated);
 
-    const updatedTag = TagsTable.updateTag(tagId, updateData, userId);
+  const updatedTag = TagsTable.update(tagId, updateData);
 
     if (!updatedTag) {
       return res.status(404).json({ error: 'Tag not found or access denied' });
@@ -470,9 +498,16 @@ router.delete('/:id', authenticateToken, async (req: AuthenticatedRequest, res) 
     const tagId = req.params.id;
     
     // Get tag info before deletion for audit logging
-    const tag = TagsTable.getTagById(tagId, userId);
+  const tag = TagsTable.getById(tagId);
     
-    const deleted = TagsTable.deleteTag(tagId, userId);
+    const deleted = ((): boolean => {
+      try {
+        TagsTable.delete(tagId);
+        return true;
+      } catch (err) {
+        return false;
+      }
+    })();
 
     if (!deleted) {
       return res.status(404).json({ error: 'Tag not found or access denied' });
@@ -1245,6 +1280,60 @@ router.post('/projects/:projectId/import/siemens/csv', authenticateToken, upload
   }
 });
 
+// Import Siemens XML
+router.post('/projects/:projectId/import/siemens/xml', authenticateToken, upload.single('file'), async (req, res) => {
+  try {
+    const userId = (req as AuthenticatedRequest).user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const projectId = parseInt(req.params.projectId);
+    if (isNaN(projectId)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+
+    // Verify project exists and user has access
+    const project = ProjectsTable.getProjectById(projectId, userId);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    if (!req.file.mimetype.includes('xml') && !req.file.originalname?.toLowerCase().endsWith('.xml')) {
+      return res.status(400).json({ error: 'File must be an XML file' });
+    }
+
+    const result = await importSiemensTags(projectId, req.file, 'xml', userId);
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    await logAuditEvent({
+      userId: userId,
+      action: 'IMPORT_SIEMENS_XML',
+      metadata: {
+        resource_type: 'tags',
+        resource_id: projectId,
+        imported_count: result.inserted,
+        filename: req.file.originalname
+      }
+    });
+
+    res.json(result);
+
+  } catch (error) {
+    console.error('Error importing Siemens XML:', error);
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Failed to import Siemens XML' 
+    });
+  }
+});
+
 // --- GET /api/v1/tags/stats/:projectId - Get tag statistics
 router.get('/stats/:projectId', authenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
@@ -1264,8 +1353,26 @@ router.get('/stats/:projectId', authenticateToken, async (req: AuthenticatedRequ
       return res.status(404).json({ error: 'Project not found or access denied' });
     }
 
-    // Get tag statistics
-    const stats = await TagsTable.getTagStats(projectId, userId);
+    // Get tag statistics (computed here because TagsTable has no getTagStats helper)
+    const tagsResult = TagsTable.getTags({ project_id: projectId, user_id: userId });
+    const allTags = tagsResult.tags;
+    const total = tagsResult.total;
+    const byVendor: Record<string, number> = {};
+    const byType: Record<string, number> = {};
+    const byScope: Record<string, number> = {};
+
+    for (const t of allTags) {
+      byVendor[t.vendor] = (byVendor[t.vendor] || 0) + 1;
+      byType[t.type] = (byType[t.type] || 0) + 1;
+      byScope[t.scope] = (byScope[t.scope] || 0) + 1;
+    }
+
+    const stats = {
+      total,
+      byVendor,
+      byType,
+      byScope
+    };
 
     await logAuditEvent({
       userId: userId,

@@ -1,4 +1,5 @@
 import db from '../index';
+import { v4 as uuidv4 } from 'uuid';
 
 export interface Tag {
   id: string;
@@ -6,8 +7,8 @@ export interface Tag {
   user_id: string;
   name: string;
   description: string;
-  type: 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'STRING' | 'TIMER' | 'COUNTER';
-  data_type: string; // vendor-specific type
+  type: 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'STRING';
+  data_type: string;
   address: string;
   default_value: string;
   vendor: 'rockwell' | 'siemens' | 'beckhoff';
@@ -23,7 +24,7 @@ export interface CreateTagData {
   user_id: string;
   name: string;
   description: string;
-  type: 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'STRING' | 'TIMER' | 'COUNTER';
+  type: 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'STRING';
   data_type?: string;
   address: string;
   default_value?: string;
@@ -36,7 +37,7 @@ export interface CreateTagData {
 export interface UpdateTagData {
   name?: string;
   description?: string;
-  type?: 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'STRING' | 'TIMER' | 'COUNTER';
+  type?: 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'STRING';
   data_type?: string;
   address?: string;
   default_value?: string;
@@ -47,15 +48,15 @@ export interface UpdateTagData {
 }
 
 export class TagsTable {
-  static initializeTable() {
+  static initializeTable(): void {
     const createTableSQL = `
       CREATE TABLE IF NOT EXISTS tags (
-        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        id TEXT PRIMARY KEY,
         project_id INTEGER NOT NULL,
         user_id TEXT NOT NULL,
         name TEXT NOT NULL,
         description TEXT NOT NULL,
-        type TEXT NOT NULL CHECK (type IN ('BOOL', 'INT', 'DINT', 'REAL', 'STRING', 'TIMER', 'COUNTER')),
+  type TEXT NOT NULL CHECK (type IN ('BOOL', 'INT', 'DINT', 'REAL', 'STRING')),
         data_type TEXT,
         address TEXT NOT NULL,
         default_value TEXT DEFAULT '',
@@ -63,8 +64,8 @@ export class TagsTable {
         scope TEXT NOT NULL CHECK (scope IN ('global', 'local', 'input', 'output')),
         tag_type TEXT NOT NULL CHECK (tag_type IN ('input', 'output', 'memory', 'temp', 'constant')),
         is_ai_generated BOOLEAN DEFAULT 0,
-        created_at TEXT DEFAULT (datetime('now')),
-        updated_at TEXT DEFAULT (datetime('now')),
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         UNIQUE(project_id, name)
@@ -73,7 +74,6 @@ export class TagsTable {
     
     db.prepare(createTableSQL).run();
 
-    // Create indexes for better performance
     const indexes = [
       'CREATE INDEX IF NOT EXISTS idx_tags_project_id ON tags(project_id)',
       'CREATE INDEX IF NOT EXISTS idx_tags_user_id ON tags(user_id)',
@@ -88,23 +88,51 @@ export class TagsTable {
       db.prepare(indexSQL).run();
     });
 
-    // console.log('✅ Tags table and indexes created successfully');
+    console.log('✅ Tags table and indexes initialized');
   }
 
-  // Create a new tag
-  static createTag(data: CreateTagData): Tag {
-    const insertSQL = `
-      INSERT INTO tags (
-        project_id, user_id, name, description, type, data_type, address, 
-        default_value, vendor, scope, tag_type, is_ai_generated
-      ) VALUES (
-        @project_id, @user_id, @name, @description, @type, @data_type, @address,
-        @default_value, @vendor, @scope, @tag_type, @is_ai_generated
-      )
-    `;
+  static create(data: CreateTagData): Tag {
+    const id = uuidv4();
+    const now = new Date().toISOString();
 
-    const stmt = db.prepare(insertSQL);
-    const result = stmt.run({
+    const stmt = db.prepare(`
+      INSERT INTO tags (
+        id,
+        project_id,
+        user_id,
+        name,
+        description,
+        type,
+        data_type,
+        address,
+        default_value,
+        vendor,
+        scope,
+        tag_type,
+        is_ai_generated,
+        created_at,
+        updated_at
+      ) VALUES (
+        @id,
+        @project_id,
+        @user_id,
+        @name,
+        @description,
+        @type,
+        @data_type,
+        @address,
+        @default_value,
+        @vendor,
+        @scope,
+        @tag_type,
+        @is_ai_generated,
+        @created_at,
+        @updated_at
+      )
+    `);
+
+    stmt.run({
+      id,
       project_id: data.project_id,
       user_id: data.user_id,
       name: data.name,
@@ -116,15 +144,71 @@ export class TagsTable {
       vendor: data.vendor,
       scope: data.scope,
       tag_type: data.tag_type,
+      is_ai_generated: data.is_ai_generated ? 1 : 0,
+      created_at: now,
+      updated_at: now
+    });
+
+    return this.getById(id);
+  }
+
+  static createTag(data: CreateTagData): Tag {
+    return this.create(data);
+  }
+
+  static getById(id: string): Tag {
+    const stmt = db.prepare('SELECT * FROM tags WHERE id = ?');
+    const row = stmt.get(id) as any;
+    
+    if (!row) throw new Error('Tag not found');
+
+    return {
+      ...row,
+      is_ai_generated: Boolean(row.is_ai_generated)
+    };
+  }
+
+  static getByProjectId(projectId: number): Tag[] {
+    const stmt = db.prepare('SELECT * FROM tags WHERE project_id = ? ORDER BY name');
+    const rows = stmt.all(projectId) as any[];
+    return rows.map(row => ({
+      ...row,
+      is_ai_generated: Boolean(row.is_ai_generated)
+    }));
+  }
+
+  static update(id: string, data: UpdateTagData): Tag {
+    const updates = Object.entries(data)
+      .filter(([_, value]) => value !== undefined)
+      .map(([key, _]) => `${key} = @${key}`)
+      .join(', ');
+
+    if (!updates) return this.getById(id);
+
+    const sql = `
+      UPDATE tags
+      SET ${updates}, updated_at = @updated_at
+      WHERE id = @id
+    `;
+
+    const stmt = db.prepare(sql);
+    const now = new Date().toISOString();
+    
+    stmt.run({
+      ...data,
+      id,
+      updated_at: now,
       is_ai_generated: data.is_ai_generated ? 1 : 0
     });
 
-    // Get the created tag
-    const selectSQL = 'SELECT * FROM tags WHERE rowid = ?';
-    return db.prepare(selectSQL).get(result.lastInsertRowid) as Tag;
+    return this.getById(id);
   }
 
-  // Get tags with filters
+  static delete(id: string): void {
+    const stmt = db.prepare('DELETE FROM tags WHERE id = ?');
+    stmt.run(id);
+  }
+
   static getTags(filters: {
     project_id?: number;
     user_id?: string;
@@ -137,9 +221,9 @@ export class TagsTable {
     search?: string;
     page?: number;
     page_size?: number;
-  }): { tags: Tag[], total: number } {
+  }): { tags: Tag[]; total: number } {
     let whereClause = 'WHERE 1=1';
-    const params: any = {};
+    const params: Record<string, any> = {};
 
     if (filters.project_id) {
       whereClause += ' AND project_id = @project_id';
@@ -182,146 +266,64 @@ export class TagsTable {
     }
 
     if (filters.search) {
-      whereClause += ' AND (name LIKE @search OR description LIKE @search)';
+      whereClause += ' AND (name LIKE @search OR description LIKE @search OR address LIKE @search)';
       params.search = `%${filters.search}%`;
     }
 
-    // Get total count
-    const countSQL = `SELECT COUNT(*) as total FROM tags ${whereClause}`;
-    const countResult = db.prepare(countSQL).get(params) as { total: number };
-
-    // Get paginated results
-    let dataSQL = `SELECT * FROM tags ${whereClause} ORDER BY created_at DESC`;
-    
     const page = filters.page || 1;
     const pageSize = filters.page_size || 50;
     const offset = (page - 1) * pageSize;
-    
-    dataSQL += ' LIMIT @limit OFFSET @offset';
-    params.limit = pageSize;
-    params.offset = offset;
 
-    const tags = db.prepare(dataSQL).all(params) as Tag[];
+    // Get total count
+    const countStmt = db.prepare(`SELECT COUNT(*) as total FROM tags ${whereClause}`);
+    const { total } = countStmt.get(params) as { total: number };
+
+    // Get paginated results
+    const dataStmt = db.prepare(
+      `SELECT * FROM tags ${whereClause} ORDER BY created_at DESC LIMIT @limit OFFSET @offset`
+    );
+    const rows = dataStmt.all({ ...params, limit: pageSize, offset }) as any[];
 
     return {
-      tags,
-      total: countResult.total
+      tags: rows.map(row => ({
+        ...row,
+        is_ai_generated: Boolean(row.is_ai_generated)
+      })),
+      total
     };
   }
 
-  // Get tag by ID
-  static getTagById(id: string, user_id?: string): Tag | null {
-    let sql = 'SELECT * FROM tags WHERE id = ?';
-    const params: any[] = [id];
+  static search(term: string, projectId?: number): Tag[] {
+    let sql = 'SELECT * FROM tags WHERE (name LIKE ? OR description LIKE ? OR address LIKE ?)';
+    const params: any[] = [`%${term}%`, `%${term}%`, `%${term}%`];
 
-    if (user_id) {
-      sql += ' AND user_id = ?';
-      params.push(user_id);
+    if (projectId) {
+      sql += ' AND project_id = ?';
+      params.push(projectId);
     }
 
-    return db.prepare(sql).get(...params) as Tag | null;
+    sql += ' ORDER BY name LIMIT 100';
+
+    const stmt = db.prepare(sql);
+    const rows = stmt.all(...params) as any[];
+
+    return rows.map(row => ({
+      ...row,
+      is_ai_generated: Boolean(row.is_ai_generated)
+    }));
   }
 
-  // Update tag
-  static updateTag(id: string, data: UpdateTagData, user_id?: string): Tag | null {
-    const updates: string[] = [];
-    const params: any = { id };
+  static count(projectId?: number): number {
+    let sql = 'SELECT COUNT(*) as count FROM tags';
+    const params: any[] = [];
 
-    // Build dynamic update query
-    Object.entries(data).forEach(([key, value]) => {
-      if (value !== undefined) {
-        if (key === 'is_ai_generated') {
-          updates.push(`${key} = @${key}`);
-          params[key] = value ? 1 : 0;
-        } else {
-          updates.push(`${key} = @${key}`);
-          params[key] = value;
-        }
-      }
-    });
-
-    if (updates.length === 0) {
-      return this.getTagById(id, user_id);
+    if (projectId) {
+      sql += ' WHERE project_id = ?';
+      params.push(projectId);
     }
 
-    // Add updated_at
-    updates.push('updated_at = datetime(\'now\')');
-
-    let sql = `UPDATE tags SET ${updates.join(', ')} WHERE id = @id`;
-    
-    if (user_id) {
-      sql += ' AND user_id = @user_id';
-      params.user_id = user_id;
-    }
-
-    const result = db.prepare(sql).run(params);
-
-    if (result.changes === 0) {
-      return null; // No rows updated
-    }
-
-    return this.getTagById(id, user_id);
-  }
-
-  // Delete tag
-  static deleteTag(id: string, user_id?: string): boolean {
-    let sql = 'DELETE FROM tags WHERE id = ?';
-    const params: any[] = [id];
-
-    if (user_id) {
-      sql += ' AND user_id = ?';
-      params.push(user_id);
-    }
-
-    const result = db.prepare(sql).run(...params);
-    return result.changes > 0;
-  }
-
-  // Delete all tags for a project
-  static deleteTagsByProject(project_id: number, user_id?: string): number {
-    let sql = 'DELETE FROM tags WHERE project_id = ?';
-    const params: any[] = [project_id];
-
-    if (user_id) {
-      sql += ' AND user_id = ?';
-      params.push(user_id);
-    }
-
-    const result = db.prepare(sql).run(...params);
-    return result.changes;
-  }
-
-  // Get tag statistics
-  static getTagStats(project_id?: number, user_id?: string): any {
-    let whereClause = 'WHERE 1=1';
-    const params: any = {};
-
-    if (project_id) {
-      whereClause += ' AND project_id = @project_id';
-      params.project_id = project_id;
-    }
-
-    if (user_id) {
-      whereClause += ' AND user_id = @user_id';
-      params.user_id = user_id;
-    }
-
-    const statsSQL = `
-      SELECT 
-        COUNT(*) as total_tags,
-        COUNT(CASE WHEN is_ai_generated = 1 THEN 1 END) as ai_generated_tags,
-        COUNT(CASE WHEN vendor = 'rockwell' THEN 1 END) as rockwell_tags,
-        COUNT(CASE WHEN vendor = 'siemens' THEN 1 END) as siemens_tags,
-        COUNT(CASE WHEN vendor = 'beckhoff' THEN 1 END) as beckhoff_tags,
-        COUNT(CASE WHEN type = 'BOOL' THEN 1 END) as bool_tags,
-        COUNT(CASE WHEN type = 'INT' THEN 1 END) as int_tags,
-        COUNT(CASE WHEN type = 'REAL' THEN 1 END) as real_tags,
-        COUNT(CASE WHEN tag_type = 'input' THEN 1 END) as input_tags,
-        COUNT(CASE WHEN tag_type = 'output' THEN 1 END) as output_tags,
-        COUNT(CASE WHEN tag_type = 'memory' THEN 1 END) as memory_tags
-      FROM tags ${whereClause}
-    `;
-
-    return db.prepare(statsSQL).get(params);
+    const stmt = db.prepare(sql);
+    const result = stmt.get(...params) as { count: number };
+    return result.count;
   }
 }

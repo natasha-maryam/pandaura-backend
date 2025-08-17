@@ -234,15 +234,7 @@ function normalizeDataType(dataType: string): string {
     'DOUBLE_INT': 'DINT',
     'REAL': 'REAL',
     'FLOAT': 'REAL',
-    'STRING': 'STRING',
-    'TIMER': 'TIMER',
-    'COUNTER': 'COUNTER',
-    'TON': 'TIMER',
-    'TOF': 'TIMER',
-    'TP': 'TIMER',
-    'CTU': 'COUNTER',
-    'CTD': 'COUNTER',
-    'CTUD': 'COUNTER'
+    'STRING': 'STRING'
   };
 
   return typeMap[normalized] || normalized;

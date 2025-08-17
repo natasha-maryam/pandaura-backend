@@ -47,7 +47,7 @@ const BECKHOFF_TYPES = new Set([
 ]);
 
 // Map Beckhoff types to our standard tag types
-const BECKHOFF_TO_STANDARD_TYPE: Record<string, 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'STRING' | 'TIMER' | 'COUNTER'> = {
+const BECKHOFF_TO_STANDARD_TYPE: Record<string, 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'STRING'> = {
   'BOOL': 'BOOL',
   'BYTE': 'INT',
   'WORD': 'INT',
@@ -63,9 +63,9 @@ const BECKHOFF_TO_STANDARD_TYPE: Record<string, 'BOOL' | 'INT' | 'DINT' | 'REAL'
   'ULINT': 'DINT',
   'REAL': 'REAL',
   'LREAL': 'REAL',
-  'TIME': 'TIMER',
+  'TIME': 'DINT',
   'DATE': 'STRING',
-  'TIME_OF_DAY': 'TIMER',
+  'TIME_OF_DAY': 'DINT',
   'DATE_AND_TIME': 'STRING',
   'STRING': 'STRING',
   'WSTRING': 'STRING',
@@ -115,7 +115,7 @@ interface ValidationResult {
   errors: string[];
   mapped: {
     name: string | null;
-    standardType: 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'STRING' | 'TIMER' | 'COUNTER' | null;
+  standardType: 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'STRING' | null;
     dataType: string | null;
     address: string | null;
     defaultValue: string | null;
@@ -188,7 +188,7 @@ function validateAndMapBeckhoffRow(row: ParsedRow): ValidationResult {
   const errors: string[] = [];
   const mapped = {
     name: row.name || null,
-    standardType: null as 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'STRING' | 'TIMER' | 'COUNTER' | null,
+    standardType: null as 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'STRING'| null,
     dataType: null as string | null,
     address: row.address || null,
     defaultValue: row.default_value || null,
@@ -202,14 +202,14 @@ function validateAndMapBeckhoffRow(row: ParsedRow): ValidationResult {
   }
 
   if (row.data_type) {
-    const dtRaw = row.data_type.trim().toLowerCase().replace(/\s+/g, '_');
-    const dtNorm = DATA_TYPE_NORMALIZE[dtRaw];
-    if (!dtNorm || !BECKHOFF_TYPES.has(dtNorm)) {
-      errors.push(`Unsupported Beckhoff data type: ${row.data_type}`);
-    } else {
-      mapped.dataType = dtNorm;
-      mapped.standardType = BECKHOFF_TO_STANDARD_TYPE[dtNorm];
-    }
+    const raw = row.data_type.trim();
+    const key = raw.toLowerCase().replace(/\s+/g, '_');
+    // Prefer canonical normalization if available
+    const canonical = DATA_TYPE_NORMALIZE[key] || raw.toUpperCase();
+
+    // Accept any Beckhoff data type; if it's known, map to our standard type, otherwise fallback to DINT
+    mapped.dataType = canonical;
+    mapped.standardType = BECKHOFF_TO_STANDARD_TYPE[canonical] || 'DINT';
   } else {
     errors.push('Missing data type');
   }
@@ -253,7 +253,7 @@ async function upsertTagsInDB(projectId: number, userId: string, tags: CreateTag
       
       if (existingTag) {
         // Update existing tag
-        TagsTable.updateTag(existingTag.id, {
+        TagsTable.update(existingTag.id, {
           description: tagData.description,
           type: tagData.type,
           data_type: tagData.data_type,
@@ -266,7 +266,7 @@ async function upsertTagsInDB(projectId: number, userId: string, tags: CreateTag
         });
       } else {
         // Create new tag
-        TagsTable.createTag(tagData);
+        TagsTable.create(tagData);
       }
     } catch (error) {
       console.error(`Error upserting tag ${tagData.name}:`, error);
@@ -436,17 +436,13 @@ export async function importBeckhoffXml(buffer: Buffer, projectId: number, userI
         continue;
       }
 
-      const dtNorm = DATA_TYPE_NORMALIZE[dataTypeRaw.toLowerCase()] || null;
-      if (!dtNorm || !BECKHOFF_TYPES.has(dtNorm)) {
-        errors.push({ row: i + 1, errors: [`Unsupported Beckhoff data type: ${dataTypeRaw}`], raw: v });
-        continue;
-      }
+  const raw = dataTypeRaw.toString().trim();
+  const key = raw.toLowerCase().replace(/\s+/g, '_');
+  const canonical = DATA_TYPE_NORMALIZE[key] || raw.toUpperCase();
 
-      const standardType = BECKHOFF_TO_STANDARD_TYPE[dtNorm];
-      if (!standardType) {
-        errors.push({ row: i + 1, errors: [`Cannot map data type to standard type: ${dtNorm}`], raw: v });
-        continue;
-      }
+  // Accept any Beckhoff data type. If known, map to a standard type, otherwise fallback to DINT
+  const standardType = BECKHOFF_TO_STANDARD_TYPE[canonical] || 'DINT';
+  const dtNorm = canonical;
 
       // Determine tag_type based on address or default to memory
       let tagType: 'input' | 'output' | 'memory' | 'temp' | 'constant' = 'memory';

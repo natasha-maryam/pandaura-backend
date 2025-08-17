@@ -1,3 +1,0 @@
-Tag Name,Data Type,Scope,Description,External Access,Default Value,Address
-Temperature_PV,REAL,global,Process temperature reading,,FALSE,Local:3:I.Ch0Data
-Motor1_Start,BOOL,global,Motor 1 start command,,FALSE,Local:1:O.Data[0].0

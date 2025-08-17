@@ -405,7 +405,7 @@ export class TagSyncService {
           console.log(`🔍 TagSync Update: Raw scope: "${rawScopeForUpdate}" → Normalized: "${normalizedScopeForUpdate}"`);
           console.log(`🔍 TagSync Update: Raw vendor: "${rawVendorForUpdate}" → Normalized: "${normalizedVendorForUpdate}"`);
 
-          TagsTable.updateTag(existingTag.id, {
+          TagsTable.update(existingTag.id, {
             type: normalizedDataTypeForUpdate,
             data_type: normalizedDataTypeForUpdate,
             address: tag.Address || tag.address,
@@ -446,7 +446,7 @@ export class TagSyncService {
 
           console.log(`🔍 Creating tag with data:`, JSON.stringify(tagData, null, 2));
           console.log(`🔍 Data type being inserted: "${tagData.data_type}" (length: ${tagData.data_type?.length})`);
-          TagsTable.createTag(tagData);
+          TagsTable.create(tagData);
         }
       } catch (error) {
         console.error(`Error upserting tag ${tag.Name || tag.TagName || tag.name}:`, error);
@@ -548,6 +548,26 @@ export class TagSyncService {
       projectStats,
       timestamp: new Date().toISOString()
     };
+  }
+
+  /**
+   * Public helper to notify subscribers that a project's tags were updated
+   * Useful for non-WS flows like file imports to trigger real-time reload
+   */
+  public notifyProjectTagsUpdated(projectId: number) {
+    try {
+      const tagsResult = TagsTable.getTags({ project_id: projectId, page_size: 1000 });
+      const response = {
+        type: 'tags_updated' as const,
+        success: true,
+        projectId: String(projectId),
+        tags: tagsResult.tags,
+        timestamp: new Date().toISOString(),
+      };
+      this.broadcastToProject(String(projectId), response);
+    } catch (error) {
+      console.error('Failed to notify project tags updated:', error);
+    }
   }
 
   /**

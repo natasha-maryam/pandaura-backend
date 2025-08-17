@@ -32,6 +32,29 @@ export interface UpdateProjectData {
 }
 
 export class ProjectsTable {
+  static async getById(id: number): Promise<Project | null> {
+    const stmt = db.prepare(`
+      SELECT * FROM projects WHERE id = ?
+    `);
+    const row = stmt.get(id) as any;
+    
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      user_id: row.user_id,
+      project_name: row.project_name,
+      client_name: row.client_name,
+      project_type: row.project_type,
+      description: row.description,
+      target_plc_vendor: row.target_plc_vendor,
+      autosave_state: row.autosave_state,
+      metadata: row.metadata,
+      created_at: row.created_at,
+      updated_at: row.updated_at
+    };
+  }
+
   static initializeTable() {
     const createTableSQL = `
       CREATE TABLE IF NOT EXISTS projects (

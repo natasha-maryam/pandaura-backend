@@ -213,8 +213,7 @@ export function validateRockwellAddress(address: string): boolean {
     /^N\d+:\d+$/,         // Integer: N7:0
     /^F\d+:\d+$/,         // Float: F8:0
     /^B\d+:\d+$/,         // Binary: B3:0
-    /^T\d+:\d+$/,         // Timer: T4:0
-    /^C\d+:\d+$/,         // Counter: C5:0
+  // Timers/Counters are intentionally excluded from supported data types
     /^L\d+:\d+$/,         // Local: L1:0
     /^[A-Za-z_][A-Za-z0-9_]*$/ // Tag names
   ];

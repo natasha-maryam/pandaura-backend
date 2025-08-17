@@ -38,12 +38,13 @@ function validateAndMapSiemensRow(row: ParsedSiemensRow, projectId: number, user
     'STRING': 'STRING',
     'WORD': 'WORD',
     'DWORD': 'DWORD',
-    'TIME': 'TIME'
+  'TIME': 'DINT'
   };
 
-  const standardType = dataTypeMap[row.DataType.toUpperCase()];
+  const rawDT = row.DataType || row.DataType === '' ? row.DataType : undefined;
+  const standardType = rawDT ? dataTypeMap[rawDT.toUpperCase()] : undefined;
   if (!standardType) {
-    errors.push(`Unsupported Siemens data type: ${row.DataType}`);
+    errors.push(`Unsupported Siemens data type: ${row.DataType || 'undefined'}`);
   }
 
   if (errors.length > 0) {
@@ -56,7 +57,7 @@ function validateAndMapSiemensRow(row: ParsedSiemensRow, projectId: number, user
     user_id: userId,
     name: row.Name,
     description: row.Comment || '',
-    type: standardType as 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'STRING' | 'TIMER' | 'COUNTER',
+  type: standardType as 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'STRING',
     data_type: row.DataType,
     address: row.Address || '',
     default_value: row.InitialValue,

@@ -12,8 +12,10 @@ import testRoutes from './routes/test';
 import projectsRoutes from './routes/projects';
 import tagsRoutes from './routes/tags';
 import projectVersionsRoutes from './routes/project_versions_new';
+import tagImportRoutes from './routes/tagImport';
 import http from 'http';
 import { TagSyncService } from './services/tagSyncService';
+import { setTagSyncService } from './services/tagSyncSingleton';
 import { WebSocketServer } from 'ws';
 
 
@@ -78,7 +80,14 @@ app.use((req, res, next) => {
 app.set('trust proxy', true);
 
 // Initialize database tables
-initializeTables().catch(console.error);
+initializeTables()
+  .then(() => {
+    console.log('✅ Database tables initialized successfully');
+  })
+  .catch((error) => {
+    console.error('❌ Error initializing database tables:', error);
+    process.exit(1);
+  });
 
 // Routes
 app.use('/api/v1/auth', authRoutes);
@@ -86,6 +95,8 @@ app.use('/api/v1/orgs', orgRoutes);
 app.use('/api/v1/test', testRoutes);
 app.use('/api/v1/projects', projectsRoutes);
 app.use('/api/v1/tags', tagsRoutes);
+// Tag import routes
+app.use('/api/v1/tags', tagImportRoutes);
 // Register version control routes under projects
 app.use('/api/v1/projects', projectVersionsRoutes);
 
@@ -205,8 +216,9 @@ const wss = new WebSocketServer({
   }
 });
 
-// Pass WebSocket server to your TagSyncService
-new TagSyncService(wss);
+// Pass WebSocket server to your TagSyncService and store singleton
+const tagSyncService = new TagSyncService(wss);
+setTagSyncService(tagSyncService);
 
 server.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);

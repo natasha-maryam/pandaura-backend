@@ -39,7 +39,7 @@ const ROCKWELL_TYPES = new Set([
 ]);
 
 // Map Rockwell types to our standard tag types
-const ROCKWELL_TO_STANDARD_TYPE: Record<string, 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'STRING' | 'TIMER' | 'COUNTER'> = {
+const ROCKWELL_TO_STANDARD_TYPE: Record<string, 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'STRING'> = {
   'BOOL': 'BOOL',
   'SINT': 'INT',
   'INT': 'INT', 
@@ -162,8 +162,7 @@ function validateAndMapRockwellRow(row: ParsedRockwellRow, projectId: number, us
       /^N\d+:\d+$/i,             // Integer: N7:0
       /^F\d+:\d+$/i,             // Float: F8:0
       /^B\d+:\d+$/i,             // Binary: B3:0
-      /^T\d+:\d+$/i,             // Timer: T4:0
-      /^C\d+:\d+$/i,             // Counter: C5:0
+  // Timer/Counter address formats intentionally excluded (not supported types)
       /^R\d+:\d+$/i,             // Control: R6:0
       /^S\d+:\d+$/i,             // String: S2:0
       /^[A-Za-z_][A-Za-z0-9_]*$/ // Symbolic: MyTag_1
