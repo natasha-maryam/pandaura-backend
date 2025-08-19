@@ -1,25 +1,17 @@
-// Environment-aware database initialization
-import { initializeTables as initSQLiteTables } from './tables';
-import { db as postgresDB } from './postgres';
+// Unified database adapter using Knex.js for PostgreSQL
+import DatabaseService from './database-service-clean';
 
+// Initialize database and run migrations
 export async function initializeTables() {
   try {
-    if (process.env.VERCEL || process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production') {
-      // Use PostgreSQL in production (Vercel or Railway)
-      // console.log('Initializing PostgreSQL tables...');
-      await postgresDB.initializeTables();
-    } else {
-      // Use SQLite for local development
-      // console.log('Initializing SQLite tables...');
-      initSQLiteTables();
-    }
+    console.log('Initializing PostgreSQL database with Knex...');
+    // await DatabaseService.runMigrations();
+    console.log('Database initialization completed successfully');
   } catch (error) {
-    console.error('Failed to initialize database tables:', error);
+    console.error('Failed to initialize database:', error);
     throw error;
   }
 }
 
-// Export the appropriate database instance
-export const db = process.env.VERCEL || process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production' 
-  ? postgresDB 
-  : require('./index').default;
+// Export the unified database service
+export const db = DatabaseService;

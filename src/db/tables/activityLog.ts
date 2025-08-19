@@ -1,18 +1,24 @@
-import db from '../index';
+// This file contains TypeScript interfaces for activity log table
+// Table creation is handled by Knex migrations
 
-export function createAuditLogsTable() {
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS audit_logs (
-      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-      user_id TEXT,
-      org_id TEXT,
-      action TEXT NOT NULL,
-      ip_address TEXT,
-      user_agent TEXT,
-      metadata TEXT,
-      created_at INTEGER DEFAULT (strftime('%s','now')),
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL,
-      FOREIGN KEY(org_id) REFERENCES organizations(id) ON DELETE SET NULL
-    )
-  `).run();
+export interface ActivityLog {
+  id: string;
+  user_id?: string;
+  action: string;
+  ip_address: string;
+  user_agent: string;
+  success: boolean;
+  details?: any;
+  created_at: string;
+}
+
+export interface AuditLog {
+  id: string;
+  user_id?: string;
+  org_id?: string;
+  action: string;
+  ip_address?: string;
+  user_agent?: string;
+  metadata?: any;
+  created_at: string;
 }

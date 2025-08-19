@@ -1,0 +1,189 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+console.log("Welcome to Pandaura Backend");
+const express_1 = __importDefault(require("express"));
+const cors_1 = __importDefault(require("cors"));
+const helmet_1 = __importDefault(require("helmet"));
+const auth_new_1 = __importDefault(require("./routes/auth-new"));
+const orgs_new_1 = __importDefault(require("./routes/orgs.new"));
+const projects_new_1 = __importDefault(require("./routes/projects-new"));
+const tags_new_1 = __importDefault(require("./routes/tags-new"));
+const project_versions_new_1 = __importDefault(require("./routes/project_versions_new"));
+const tagImport_1 = __importDefault(require("./routes/tagImport"));
+const http_1 = __importDefault(require("http"));
+// import { TagSyncService } from './services/tagSyncService';  // Disabled temporarily
+const ws_1 = require("ws");
+const app = (0, express_1.default)();
+const port = process.env.PORT || 5000;
+const server = http_1.default.createServer(app);
+// Security middleware
+app.use((0, helmet_1.default)());
+// Configure CORS to handle multiple origins
+const allowedOrigins = [
+    process.env.FRONTEND_URL || 'http://localhost:5173',
+    process.env.CORS_ORIGIN,
+    // Parse additional CORS origins from environment
+    ...(process.env.ADDITIONAL_CORS_ORIGINS?.split(',') || []),
+    // Default development origins
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:3000',
+    // Common production domains
+    'https://pandaura.vercel.app',
+    'https://pandaura-frontend.vercel.app',
+].filter((origin) => Boolean(origin)).map(origin => origin.trim()); // Remove any undefined values and trim whitespace
+app.use((0, cors_1.default)({
+    origin: (origin, callback) => {
+        // Allow requests with no origin (mobile apps, Postman, etc.)
+        if (!origin)
+            return callback(null, true);
+        // Check if origin is in allowed list
+        if (allowedOrigins.some(allowedOrigin => origin === allowedOrigin ||
+            origin.endsWith('.vercel.app') ||
+            origin.startsWith('http://localhost') ||
+            origin.startsWith('http://127.0.0.1'))) {
+            return callback(null, true);
+        }
+        console.log('CORS blocked origin:', origin);
+        console.log('Allowed origins:', allowedOrigins);
+        callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+}));
+// Body parsing middleware
+app.use(express_1.default.json({ limit: '10mb' }));
+app.use(express_1.default.urlencoded({ extended: true }));
+// Add request logging
+app.use((req, res, next) => {
+    console.log(`Incoming request: ${req.method} ${req.path} - Full URL: ${req.url}`);
+    next();
+});
+// Trust proxy for accurate IP addresses in audit logs
+app.set('trust proxy', true);
+// Initialize database tables - No longer needed with Knex migrations
+// initializeTables().catch(console.error);
+// Routes
+app.use('/api/v1/auth', auth_new_1.default);
+app.use('/api/v1/orgs', orgs_new_1.default);
+app.use('/api/v1/projects', projects_new_1.default);
+app.use('/api/v1/tags', tags_new_1.default);
+// Tag import routes
+app.use('/api/v1/tags', tagImport_1.default);
+// Register version control routes under projects
+app.use('/api/v1/projects', project_versions_new_1.default);
+// Log registered routes for debugging
+app.once('mount', () => {
+    console.log('\nRegistered Routes:');
+    console.log('=================');
+    console.log('GET     /api/v1/auth/*');
+    console.log('GET     /api/v1/orgs/*');
+    console.log('GET     /api/v1/test/*');
+    console.log('GET     /api/v1/projects/*');
+    console.log('GET     /api/v1/tags/*');
+    console.log('GET     /api/v1/versions/projects/:projectId/versions');
+    console.log('GET     /api/v1/versions/projects/:projectId/version/:versionNumber');
+    console.log('POST    /api/v1/versions/projects/:projectId/version');
+    console.log('POST    /api/v1/versions/projects/:projectId/version/:versionNumber/rollback');
+    console.log('POST    /api/v1/versions/projects/:projectId/auto-save');
+    console.log('GET     /api/v1/versions/projects/:projectId/auto-save');
+    console.log('GET     /api/v1/versions/projects/:projectId/audit');
+    console.log('POST    /api/v1/versions/projects/:projectId/cleanup');
+    console.log('=================\n');
+});
+// Add a simple test route
+app.get('/api/v1/simple-test', (req, res) => {
+    console.log('Simple test route hit!');
+    res.json({ message: 'Simple test route works!' });
+});
+// WebSocket test endpoint
+app.get('/api/v1/ws-test', (req, res) => {
+    res.json({
+        message: 'WebSocket server should be running',
+        wsEndpoints: ['/ws/tags', '/ws/test'],
+        serverTime: new Date().toISOString()
+    });
+});
+// const rows = db.prepare("SELECT * FROM users").all();
+// console.log(rows)
+app.get('/', (req, res) => {
+    res.json({
+        message: 'Pandaura AS Backend API',
+        version: '1.0.0',
+        status: 'running',
+        endpoints: {
+            auth: '/api/v1/auth',
+            organizations: '/api/v1/orgs',
+            projects: '/api/v1/projects',
+            tags: '/api/v1/tags',
+            test: '/api/v1/test'
+        }
+    });
+});
+// CORS debug endpoint
+app.get('/api/v1/cors-test', (req, res) => {
+    res.json({
+        message: 'CORS is working!',
+        origin: req.headers.origin,
+        timestamp: new Date().toISOString(),
+        headers: req.headers
+    });
+});
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error('Error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+});
+// 404 handler
+app.use((req, res) => {
+    res.status(404).json({ error: 'Endpoint not found' });
+});
+const allowedWsOrigins = allowedOrigins;
+// console.log('🌐 Allowed WebSocket origins:', allowedWsOrigins);
+const wss = new ws_1.WebSocketServer({
+    server,
+    path: '/ws/tags', // Only handle /ws/tags path
+    verifyClient: (info, done) => {
+        console.log('🔍 WebSocket connection attempt:');
+        console.log('  - URL:', info.req.url);
+        console.log('  - Origin:', info.origin || 'none');
+        console.log('  - Host:', info.req.headers.host);
+        const origin = info.origin;
+        // Allow connections without origin (for testing) or from allowed origins
+        if (!origin) {
+            console.log('✅ No origin header - allowing connection');
+            done(true);
+            return;
+        }
+        const isAllowed = allowedWsOrigins.some(allowedOrigin => origin === allowedOrigin ||
+            origin.endsWith('.vercel.app') ||
+            origin.startsWith('http://localhost') ||
+            origin.startsWith('http://127.0.0.1'));
+        if (isAllowed) {
+            console.log('✅ Origin allowed:', origin);
+            done(true);
+        }
+        else {
+            console.log('❌ WS blocked origin:', origin);
+            console.log('✅ Allowed WS origins:', allowedWsOrigins);
+            done(false, 403, 'Forbidden');
+        }
+    }
+});
+// Pass WebSocket server to your TagSyncService
+// new TagSyncService(wss);  // Disabled temporarily
+server.listen(port, () => {
+    console.log(`Server is running on http://localhost:${port}`);
+    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
+});
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error);
+});
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});

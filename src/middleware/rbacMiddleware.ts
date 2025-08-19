@@ -1,5 +1,5 @@
 import { Response, NextFunction } from 'express';
-import db from '../db';
+import db from '../db/knex';
 import { AuthenticatedRequest } from './authMiddleware';
 
 const ROLE_HIERARCHY = { Viewer: 1, Editor: 2, Admin: 3 };
@@ -19,11 +19,10 @@ export function rbacMiddleware(requiredRole: 'Viewer' | 'Editor' | 'Admin') {
       }
 
       // Query current role fresh from DB (enforces zero trust)
-      const stmt = db.prepare(`
-        SELECT role FROM team_members 
-        WHERE user_id = ? AND org_id = ?
-      `);
-      const result = stmt.get(user.userId, orgId) as { role: string } | undefined;
+      const result = await db('team_members')
+        .select('role')
+        .where({ user_id: user.userId, org_id: orgId })
+        .first() as { role: string } | undefined;
 
       if (!result) {
         return res.status(403).json({ error: 'User not a member of this organization' });

@@ -1,4 +1,4 @@
-import db from '../db';
+import db from '../db/knex';
 import { v4 as uuidv4 } from 'uuid';
 
 interface AuditLogEntry {
@@ -12,20 +12,16 @@ interface AuditLogEntry {
 
 export async function logAuditEvent(entry: AuditLogEntry): Promise<void> {
   try {
-    const stmt = db.prepare(`
-      INSERT INTO audit_logs (id, user_id, org_id, action, ip_address, user_agent, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    stmt.run(
-      uuidv4(),
-      entry.userId || null,
-      entry.orgId || null,
-      entry.action,
-      entry.ip || null,
-      entry.userAgent || null,
-      entry.metadata ? JSON.stringify(entry.metadata) : null
-    );
+    await db('activity_log').insert({
+      id: uuidv4(),
+      user_id: entry.userId || null,
+      action: entry.action,
+      ip_address: entry.ip || null,
+      user_agent: entry.userAgent || null,
+      success: true,
+      details: entry.metadata ? JSON.stringify(entry.metadata) : '{}',
+      created_at: new Date().toISOString()
+    });
   } catch (err) {
     console.error('Audit log error:', err);
   }

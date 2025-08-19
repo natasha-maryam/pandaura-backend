@@ -1,14 +1,15 @@
-import db from '../index';
+// This file contains TypeScript interfaces for device bindings table
+// Table creation is handled by Knex migrations
 
-export function createDeviceBindingsTable() {
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS device_bindings (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      instance_id_hash TEXT NOT NULL,
-      device_fingerprint_hash TEXT NOT NULL,
-      bound_at INTEGER DEFAULT (strftime('%s','now')),
-      FOREIGN KEY(user_id) REFERENCES users(id)
-    )
-  `).run();
+export interface DeviceBinding {
+  id: string;
+  user_id: string;
+  device_fingerprint: string;
+  ip_address: string;
+  user_agent: string;
+  totp_secret: string;
+  is_verified: boolean;
+  last_used: string;
+  created_at: string;
+  updated_at: string;
 }

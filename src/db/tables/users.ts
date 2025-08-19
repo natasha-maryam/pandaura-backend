@@ -1,61 +1,47 @@
-import db from '../index';
+// This file contains TypeScript interfaces for user-related tables
+// Table creation is handled by Knex migrations
 
-export function createUsersTable() {
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-      full_name TEXT NOT NULL,
-      email TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      totp_secret TEXT,
-      two_factor_enabled INTEGER DEFAULT 0,
-      is_active INTEGER DEFAULT 1,
-      created_at INTEGER DEFAULT (strftime('%s','now')),
-      updated_at INTEGER DEFAULT (strftime('%s','now'))
-    )
-  `).run();
+export interface User {
+  id: string;
+  email: string;
+  password_hash: string;
+  first_name?: string;
+  last_name?: string;
+  name?: string;
+  org_name?: string;
+  industry?: string;
+  role?: string;
+  is_active: boolean;
+  email_verified: boolean;
+  totp_secret?: string;
+  totp_enabled: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
-export function createOrganizationsTable() {
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS organizations (
-      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-      name TEXT NOT NULL,
-      industry TEXT,
-      size TEXT,
-      created_at INTEGER DEFAULT (strftime('%s','now')),
-      updated_at INTEGER DEFAULT (strftime('%s','now'))
-    )
-  `).run();
+export interface Organization {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
 }
 
-export function createTeamMembersTable() {
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS team_members (
-      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-      user_id TEXT NOT NULL,
-      org_id TEXT NOT NULL,
-      role TEXT CHECK (role IN ('Admin', 'Editor', 'Viewer')) DEFAULT 'Viewer',
-      joined_at INTEGER DEFAULT (strftime('%s','now')),
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY(org_id) REFERENCES organizations(id) ON DELETE CASCADE,
-      UNIQUE(user_id, org_id)
-    )
-  `).run();
+export interface TeamMember {
+  id: string;
+  user_id: string;
+  organization_id: string;
+  role: 'Admin' | 'Editor' | 'Viewer';
+  created_at: string;
+  updated_at: string;
 }
 
-export function createInvitesTable() {
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS invites (
-      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-      org_id TEXT NOT NULL,
-      email TEXT NOT NULL,
-      code TEXT UNIQUE NOT NULL,
-      role TEXT CHECK (role IN ('Admin', 'Editor', 'Viewer')) DEFAULT 'Viewer',
-      expires_at INTEGER NOT NULL,
-      created_at INTEGER DEFAULT (strftime('%s','now')),
-      used_at INTEGER,
-      FOREIGN KEY(org_id) REFERENCES organizations(id) ON DELETE CASCADE
-    )
-  `).run();
+export interface Invite {
+  id: string;
+  email: string;
+  token: string;
+  organization_id: string;
+  role: 'Admin' | 'Editor' | 'Viewer';
+  used_at?: string;
+  created_at: string;
+  updated_at: string;
 }

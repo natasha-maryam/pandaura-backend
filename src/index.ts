@@ -5,17 +5,14 @@ console.log("Welcome to Pandaura Backend");
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import { initializeTables } from './db/database-adapter';
-import authRoutes from './routes/auth';
-import orgRoutes from './routes/orgs';
-import testRoutes from './routes/test';
-import projectsRoutes from './routes/projects';
-import tagsRoutes from './routes/tags';
+import authRoutes from './routes/auth-new'; 
+import orgRoutes from './routes/orgs.new';
+import projectsRoutes from './routes/projects-new';
+import tagsRoutes from './routes/tags-new';
 import projectVersionsRoutes from './routes/project_versions_new';
 import tagImportRoutes from './routes/tagImport';
 import http from 'http';
-import { TagSyncService } from './services/tagSyncService';
-import { setTagSyncService } from './services/tagSyncSingleton';
+// import { TagSyncService } from './services/tagSyncService';  // Disabled temporarily
 import { WebSocketServer } from 'ws';
 
 
@@ -79,20 +76,12 @@ app.use((req, res, next) => {
 // Trust proxy for accurate IP addresses in audit logs
 app.set('trust proxy', true);
 
-// Initialize database tables
-initializeTables()
-  .then(() => {
-    console.log('✅ Database tables initialized successfully');
-  })
-  .catch((error) => {
-    console.error('❌ Error initializing database tables:', error);
-    process.exit(1);
-  });
+// Initialize database tables - No longer needed with Knex migrations
+// initializeTables().catch(console.error);
 
 // Routes
-app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/auth', authRoutes);  
 app.use('/api/v1/orgs', orgRoutes);
-app.use('/api/v1/test', testRoutes);
 app.use('/api/v1/projects', projectsRoutes);
 app.use('/api/v1/tags', tagsRoutes);
 // Tag import routes
@@ -216,9 +205,8 @@ const wss = new WebSocketServer({
   }
 });
 
-// Pass WebSocket server to your TagSyncService and store singleton
-const tagSyncService = new TagSyncService(wss);
-setTagSyncService(tagSyncService);
+// Pass WebSocket server to your TagSyncService
+// new TagSyncService(wss);  // Disabled temporarily
 
 server.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
