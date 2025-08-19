@@ -1,3 +1,4 @@
+"use strict";
 // import { parse as csvParse } from 'csv-parse/sync';
 // import * as XLSX from 'xlsx';
 // import * as xml2js from 'xml2js';
@@ -5,31 +6,25 @@
 // import { validateAddressForVendor } from '../utils/vendorFormatters';
 // import { TagsTable } from '../db/tables/tags';
 // import { getTagSyncService } from './tagSyncSingleton';
-
 // export interface ImportError {
 //   row: number;
 //   errors: string[];
 //   raw: any;
 // }
-
 // export interface ImportResult {
 //   success: boolean;
 //   inserted?: number;
 //   errors?: ImportError[];
 //   processed?: number;
 // }
-
 // function validateTagRow(tag: Partial<Tag>, vendor: string): string[] {
 //   const errors: string[] = [];
-
 //   if (!tag.name) {
 //     errors.push('Missing tag name');
 //   }
-
 //   if (!tag.data_type) {
 //     errors.push('Missing data type');
 //   }
-
 //   // Vendor-specific address format validation — use the central helper so imports match UI validation
 //   if (tag.address) {
 //     const ok = validateAddressForVendor(tag.address, vendor as 'rockwell' | 'siemens' | 'beckhoff');
@@ -39,23 +34,18 @@
 //   } else {
 //     errors.push('Missing address');
 //   }
-
 //   return errors;
 // }
-
 // // Base class for tag importers
 // abstract class TagImporter {
 //   protected projectId: number;
 //   protected file: Express.Multer.File;
-
 //   constructor(projectId: number, file: Express.Multer.File) {
 //     this.projectId = projectId;
 //     this.file = file;
 //   }
-
 //   abstract parseFile(): Promise<CreateTagData[]>;
 //   abstract validateTags(tags: CreateTagData[]): ImportError[];
-
 //   protected mapDataTypeToType(dataType: any): Tag['type'] {
 //     // Coerce to string safely (handles undefined/null/objects)
 //     const normalizedType = String(dataType ?? '').toUpperCase();
@@ -67,7 +57,6 @@
 //     return 'DINT'; // Default to DINT for unknown types
 //   }
 // }
-
 // // Rockwell tag importer
 // class RockwellTagImporter extends TagImporter {
 //   async parseFile(): Promise<CreateTagData[]> {
@@ -76,7 +65,6 @@
 //       columns: true,
 //       skip_empty_lines: true
 //     });
-
 //     return records.map((record: any) => ({
 //       project_id: this.projectId,
 //       user_id: '',  // Will be set from authenticated user
@@ -92,7 +80,6 @@
 //       is_ai_generated: false
 //     }));
 //   }
-
 //   validateTags(tags: Tag[]): ImportError[] {
 //     return tags.map((tag, index) => {
 //       const errors = validateTagRow(tag, 'rockwell');
@@ -100,7 +87,6 @@
 //     }).filter(Boolean) as ImportError[];
 //   }
 // }
-
 // // Siemens tag importer
 // class SiemensTagImporter extends TagImporter {
 //   async parseFile(): Promise<CreateTagData[]> {
@@ -131,7 +117,6 @@
 //         skip_empty_lines: true
 //       });
 //     }
-
 //     return records.map((record: any) => ({
 //       project_id: this.projectId,
 //       user_id: '',  // Will be set from authenticated user
@@ -147,7 +132,6 @@
 //       is_ai_generated: false
 //     }));
 //   }
-
 //   validateTags(tags: Tag[]): ImportError[] {
 //     return tags.map((tag, index) => {
 //       const errors = validateTagRow(tag, 'siemens');
@@ -155,7 +139,6 @@
 //     }).filter(Boolean) as ImportError[];
 //   }
 // }
-
 // // Beckhoff tag importer
 // class BeckhoffTagImporter extends TagImporter {
 //   async parseFile(): Promise<CreateTagData[]> {
@@ -163,7 +146,6 @@
 //       const parser = new xml2js.Parser();
 //       const result = await parser.parseStringPromise(this.file.buffer.toString());
 //       const variables = result.Variables?.Variable || [];
-      
 //       return variables.map((v: any) => ({
 //         project_id: this.projectId,
 //         user_id: '',  // Will be set from authenticated user
@@ -184,7 +166,6 @@
 //         columns: true,
 //         skip_empty_lines: true
 //       });
-
 //       return records.map((record: any) => ({
 //         project_id: this.projectId,
 //         user_id: '',  // Will be set from authenticated user
@@ -201,7 +182,6 @@
 //       }));
 //     }
 //   }
-
 //   validateTags(tags: Tag[]): ImportError[] {
 //     return tags.map((tag, index) => {
 //       const errors = validateTagRow(tag, 'beckhoff');
@@ -209,7 +189,6 @@
 //     }).filter(Boolean) as ImportError[];
 //   }
 // }
-
 // // Factory function to create appropriate importer
 // function createImporter(vendor: string, projectId: number, file: Express.Multer.File): TagImporter {
 //   switch (vendor) {
@@ -223,7 +202,6 @@
 //       throw new Error(`Unsupported vendor: ${vendor}`);
 //   }
 // }
-
 // // Main import functions
 // export async function importRockwellTags(
 //   projectId: number,
@@ -234,7 +212,6 @@
 //   const importer = createImporter('rockwell', projectId, file);
 //   const tags = await importer.parseFile();
 //   const errors = importer.validateTags(tags);
-  
 //   if (errors.length > 0) {
 //     return {
 //       success: false,
@@ -242,14 +219,11 @@
 //       processed: tags.length
 //     };
 //   }
-
 //   // Set user_id for all tags
 //   const tagsWithUser = tags.map(tag => ({ ...tag, user_id: userId }));
-
 //   // Save valid tags to database, collecting per-row save errors (e.g., duplicates)
 //   const saveErrors: ImportError[] = [];
 //   const savedTags: Tag[] = [];
-
 //   for (let i = 0; i < tagsWithUser.length; i++) {
 //     const tag = tagsWithUser[i];
 //     try {
@@ -264,9 +238,7 @@
 //       // continue saving remaining tags
 //     }
 //   }
-
 //   const insertedCount = savedTags.length;
-
 //   // Notify real-time tag sync subscribers if any tags were inserted
 //   try {
 //     const tagSync = getTagSyncService();
@@ -276,7 +248,6 @@
 //   } catch (err) {
 //     console.error('Failed to notify TagSyncService after Rockwell import:', err);
 //   }
-
 //   return {
 //     success: insertedCount > 0,
 //     inserted: insertedCount,
@@ -284,7 +255,6 @@
 //     processed: tags.length
 //   };
 // }
-
 // export async function importSiemensTags(
 //   projectId: number,
 //   file: Express.Multer.File,
@@ -294,7 +264,6 @@
 //   const importer = createImporter('siemens', projectId, file);
 //   const tags = await importer.parseFile();
 //   const errors = importer.validateTags(tags);
-  
 //   if (errors.length > 0) {
 //     return {
 //       success: false,
@@ -302,14 +271,11 @@
 //       processed: tags.length
 //     };
 //   }
-
 //   // Set user_id for all tags
 //   const tagsWithUser = tags.map(tag => ({ ...tag, user_id: userId }));
-
 //   // Save valid tags to database, collecting per-row save errors
 //   const saveErrors: ImportError[] = [];
 //   const savedTags: Tag[] = [];
-
 //   for (let i = 0; i < tagsWithUser.length; i++) {
 //     const tag = tagsWithUser[i];
 //     try {
@@ -323,9 +289,7 @@
 //       saveErrors.push({ row: i + 1, errors: [msg], raw: tag });
 //     }
 //   }
-
 //   const insertedCount = savedTags.length;
-
 //   // Notify real-time tag sync subscribers if any tags were inserted
 //   try {
 //     const tagSync = getTagSyncService();
@@ -335,7 +299,6 @@
 //   } catch (err) {
 //     console.error('Failed to notify TagSyncService after Siemens import:', err);
 //   }
-
 //   return {
 //     success: insertedCount > 0,
 //     inserted: insertedCount,
@@ -343,7 +306,6 @@
 //     processed: tags.length
 //   };
 // }
-
 // export async function importBeckhoffTags(
 //   projectId: number,
 //   file: Express.Multer.File,
@@ -353,7 +315,6 @@
 //   const importer = createImporter('beckhoff', projectId, file);
 //   const tags = await importer.parseFile();
 //   const errors = importer.validateTags(tags);
-  
 //   if (errors.length > 0) {
 //     return {
 //       success: false,
@@ -361,14 +322,11 @@
 //       processed: tags.length
 //     };
 //   }
-
 //   // Set user_id for all tags
 //   const tagsWithUser = tags.map(tag => ({ ...tag, user_id: userId }));
-
 //   // Save valid tags to database, collecting per-row save errors
 //   const saveErrors: ImportError[] = [];
 //   const savedTags: Tag[] = [];
-
 //   for (let i = 0; i < tagsWithUser.length; i++) {
 //     const tag = tagsWithUser[i];
 //     try {
@@ -382,9 +340,7 @@
 //       saveErrors.push({ row: i + 1, errors: [msg], raw: tag });
 //     }
 //   }
-
 //   const insertedCount = savedTags.length;
-
 //   // Notify real-time tag sync subscribers if any tags were inserted
 //   try {
 //     const tagSync = getTagSyncService();
@@ -394,7 +350,6 @@
 //   } catch (err) {
 //     console.error('Failed to notify TagSyncService after Beckhoff import:', err);
 //   }
-
 //   return {
 //     success: insertedCount > 0,
 //     inserted: insertedCount,
