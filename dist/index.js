@@ -3,7 +3,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-console.log("Welcome to Pandaura Backend");
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
@@ -12,7 +11,7 @@ const orgs_new_1 = __importDefault(require("./routes/orgs.new"));
 const projects_new_1 = __importDefault(require("./routes/projects-new"));
 const tags_new_1 = __importDefault(require("./routes/tags-new"));
 const project_versions_new_1 = __importDefault(require("./routes/project_versions_new"));
-const tagImport_1 = __importDefault(require("./routes/tagImport"));
+// import tagImportRoutes from './routes/tagImport';
 const http_1 = __importDefault(require("http"));
 const database_manager_1 = require("./db/database-manager");
 // import { TagSyncService } from './services/tagSyncService';  // Disabled temporarily
@@ -74,7 +73,7 @@ app.use('/api/v1/orgs', orgs_new_1.default);
 app.use('/api/v1/projects', projects_new_1.default);
 app.use('/api/v1/tags', tags_new_1.default);
 // Tag import routes
-app.use('/api/v1/tags', tagImport_1.default);
+// app.use('/api/v1/tags', tagImportRoutes);
 // Register version control routes under projects
 app.use('/api/v1/projects', project_versions_new_1.default);
 // Log registered routes for debugging

@@ -1,7 +1,3 @@
-
-console.log("Welcome to Pandaura Backend");
-
-
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -10,7 +6,7 @@ import orgRoutes from './routes/orgs.new';
 import projectsRoutes from './routes/projects-new';
 import tagsRoutes from './routes/tags-new';
 import projectVersionsRoutes from './routes/project_versions_new';
-import tagImportRoutes from './routes/tagImport';
+// import tagImportRoutes from './routes/tagImport';
 import http from 'http';
 import { DatabaseManager } from './db/database-manager';
 // import { TagSyncService } from './services/tagSyncService';  // Disabled temporarily
@@ -86,7 +82,7 @@ app.use('/api/v1/orgs', orgRoutes);
 app.use('/api/v1/projects', projectsRoutes);
 app.use('/api/v1/tags', tagsRoutes);
 // Tag import routes
-app.use('/api/v1/tags', tagImportRoutes);
+// app.use('/api/v1/tags', tagImportRoutes);
 // Register version control routes under projects
 app.use('/api/v1/projects', projectVersionsRoutes);
 
