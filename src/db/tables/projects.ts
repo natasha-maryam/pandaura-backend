@@ -1,6 +1,8 @@
 // This file contains TypeScript interfaces for projects table
 // Table creation is handled by Knex migrations
 
+import db from '../knex';
+
 export interface Project {
   id: number;
   user_id: string;

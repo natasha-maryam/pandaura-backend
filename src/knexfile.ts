@@ -8,7 +8,63 @@ const config: { [key: string]: Knex.Config } = {
       port: parseInt(process.env.POSTGRES_PORT || '5432'),
       user: process.env.POSTGRES_USER || 'postgres',
       password: process.env.POSTGRES_PASSWORD || 'password',
-      database: process.env.POSTGRES_DB || 'pandaura_dev'
+      database: process.env.POSTGRES_DB || 'pandaura_dev',
+      ssl: false
+    },
+    pool: {
+      min: 2,
+      max: 10
+    },
+    migrations: {
+      directory: './knex-migrations',
+      tableName: 'knex_migrations'
+    },
+    seeds: {
+      directory: './knex-seeds'
+    },
+    debug: process.env.NODE_ENV === 'development'
+  },
+
+  production: {
+    client: 'postgresql',
+    connection: process.env.DATABASE_URL || 
+               process.env.POSTGRES_URL || 
+               'postgresql://postgres:nqvmfspKeGFgvUcgiSMSfRvXfcXQxEva@postgres.railway.internal:5432/railway',
+    pool: {
+      min: 2,
+      max: 20,
+      acquireTimeoutMillis: 60000,
+      createTimeoutMillis: 30000,
+      destroyTimeoutMillis: 5000,
+      idleTimeoutMillis: 30000,
+      reapIntervalMillis: 1000,
+      createRetryIntervalMillis: 100,
+      propagateCreateError: false
+    },
+    migrations: {
+      directory: './knex-migrations',
+      tableName: 'knex_migrations'
+    },
+    seeds: {
+      directory: './knex-seeds'
+    },
+    acquireConnectionTimeout: 60000
+  },
+
+  // Staging environment (optional)
+  staging: {
+    client: 'postgresql',
+    connection: process.env.STAGING_DATABASE_URL || {
+      host: process.env.STAGING_POSTGRES_HOST || 'localhost',
+      port: parseInt(process.env.STAGING_POSTGRES_PORT || '5432'),
+      user: process.env.STAGING_POSTGRES_USER || 'postgres',
+      password: process.env.STAGING_POSTGRES_PASSWORD,
+      database: process.env.STAGING_POSTGRES_DB || 'pandaura_staging',
+      ssl: process.env.STAGING_POSTGRES_SSL === 'true' ? { rejectUnauthorized: false } : false
+    },
+    pool: {
+      min: 2,
+      max: 10
     },
     migrations: {
       directory: './knex-migrations',
@@ -19,12 +75,19 @@ const config: { [key: string]: Knex.Config } = {
     }
   },
 
-  production: {
+  // Test environment
+  test: {
     client: 'postgresql',
-    connection: process.env.POSTGRES_URL || process.env.DATABASE_URL,
+    connection: {
+      host: process.env.TEST_POSTGRES_HOST || 'localhost',
+      port: parseInt(process.env.TEST_POSTGRES_PORT || '5432'),
+      user: process.env.TEST_POSTGRES_USER || 'postgres',
+      password: process.env.TEST_POSTGRES_PASSWORD || 'password',
+      database: process.env.TEST_POSTGRES_DB || 'pandaura_test'
+    },
     pool: {
-      min: 2,
-      max: 10
+      min: 1,
+      max: 5
     },
     migrations: {
       directory: './knex-migrations',

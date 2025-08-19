@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { ProjectsTable } from '../db/tables/projects';
+import db from '../db/knex';
 
 const JWT_SECRET = process.env.JWT_SECRET || '69d215b3cc191323c79a3a264f6ad2f194d02486f0001b4ae287b13542fcd2212e39ffda859f71f450edcde3944567db1a694a82155f74c749c2aa4e45fa8c17';
 
@@ -9,11 +9,21 @@ export interface AuthenticatedRequest extends Request {
     userId: string;
     orgId?: string;
     role?: string;
+    email?: string;
   };
   project?: {
     id: number;
     user_id: string;
   };
+}
+
+export interface TokenPayload {
+  userId: string;
+  orgId?: string;
+  role?: string;
+  email?: string;
+  iat?: number;
+  exp?: number;
 }
 
 export function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction) {
@@ -34,18 +44,49 @@ export function authenticateToken(req: AuthenticatedRequest, res: Response, next
   }
 
   try {
-    const user = jwt.verify(token, JWT_SECRET) as any;
-    req.user = user;
-    console.log('✅ Token verified for user:', user.userId);
+    const decoded = jwt.verify(token, JWT_SECRET) as TokenPayload;
+    
+    // Validate required fields
+    if (!decoded.userId) {
+      console.log('❌ Invalid token payload: missing userId');
+      return res.status(403).json({ error: 'Invalid token payload' });
+    }
+
+    req.user = {
+      userId: decoded.userId,
+      orgId: decoded.orgId,
+      role: decoded.role,
+      email: decoded.email
+    };
+    
+    console.log('✅ Token verified for user:', {
+      userId: decoded.userId,
+      role: decoded.role,
+      orgId: decoded.orgId
+    });
+    
     next();
   } catch (err) {
     console.log('❌ Token verification failed:', err);
-    return res.status(403).json({ error: 'Invalid or expired token' });
+    if (err instanceof jwt.TokenExpiredError) {
+      return res.status(401).json({ error: 'Token expired' });
+    } else if (err instanceof jwt.JsonWebTokenError) {
+      return res.status(403).json({ error: 'Invalid token' });
+    }
+    return res.status(403).json({ error: 'Token verification failed' });
   }
 }
 
-export function generateToken(payload: any, expiresIn: string = '8h'): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn } as jwt.SignOptions);
+export function generateToken(payload: TokenPayload, expiresIn: string = '8h'): string {
+  // Ensure we only include necessary fields in the token
+  const tokenPayload: TokenPayload = {
+    userId: payload.userId,
+    orgId: payload.orgId,
+    role: payload.role,
+    email: payload.email
+  };
+  
+  return jwt.sign(tokenPayload, JWT_SECRET, { expiresIn } as jwt.SignOptions);
 }
 
 export async function authorizeProjectAccess(
@@ -65,24 +106,90 @@ export async function authorizeProjectAccess(
     }
 
     // Check if project exists and user has access
-    const project = await ProjectsTable.getById(projectId);
+    const project = await db('projects')
+      .where('id', projectId)
+      .first();
+    
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
     }
 
-    if (project.user_id !== userId) {
-      // TODO: Add organization-level access check here
-      return res.status(403).json({ error: 'Not authorized to access this project' });
+    // Check direct ownership
+    if (project.user_id === userId) {
+      req.project = {
+        id: project.id,
+        user_id: project.user_id
+      };
+      return next();
     }
 
-    req.project = {
-      id: project.id,
-      user_id: project.user_id
-    };
+    // Check organization-level access
+    if (req.user?.orgId) {
+      try {
+        // Check if user is in the same organization as the project owner
+        const projectOwner = await db('users')
+          .select('id')
+          .join('team_members', 'users.id', 'team_members.user_id')
+          .where('users.id', project.user_id)
+          .where('team_members.organization_id', req.user.orgId)
+          .first();
 
-    next();
+        const currentUser = await db('team_members')
+          .where('user_id', userId)
+          .where('organization_id', req.user.orgId)
+          .first();
+
+        if (projectOwner && currentUser) {
+          // User has organization-level access
+          req.project = {
+            id: project.id,
+            user_id: project.user_id
+          };
+          return next();
+        }
+      } catch (orgError) {
+        console.error('Error checking organization access:', orgError);
+      }
+    }
+
+    return res.status(403).json({ error: 'Not authorized to access this project' });
+
   } catch (error) {
     console.error('Error in project authorization:', error);
     res.status(500).json({ error: 'Authorization check failed' });
+  }
+}
+
+// Optional middleware for admin-only routes
+export function requireAdmin(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  if (req.user?.role !== 'Admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
+}
+
+// Optional middleware for organization members
+export async function requireOrgMember(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  try {
+    const userId = req.user?.userId;
+    const orgId = req.params.orgId || req.user?.orgId;
+
+    if (!userId || !orgId) {
+      return res.status(400).json({ error: 'Missing user or organization information' });
+    }
+
+    const membership = await db('team_members')
+      .where('user_id', userId)
+      .where('organization_id', orgId)
+      .first();
+
+    if (!membership) {
+      return res.status(403).json({ error: 'Not a member of this organization' });
+    }
+
+    next();
+  } catch (error) {
+    console.error('Error checking organization membership:', error);
+    res.status(500).json({ error: 'Organization membership check failed' });
   }
 }

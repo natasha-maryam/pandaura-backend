@@ -11,12 +11,18 @@
     "migrate": "npx knex migrate:latest",
     "migrate:rollback": "npx knex migrate:rollback",
     "migrate:make": "npx knex migrate:make",
+    "migrate:status": "npx knex migrate:status",
+    "migrate:prod": "NODE_ENV=production npx knex migrate:latest",
     "db:seed": "npx knex seed:run",
     "db:clear": "node clear-database.js clear",
     "db:counts": "node clear-database.js counts",
     "db:clear-ts": "npx ts-node src/utils/clearDatabase.ts clear",
     "db:add-test-invites": "node add-test-invites.js add",
     "db:show-invites": "node add-test-invites.js show",
+    "db:check": "node scripts/check-db.js",
+    "db:health": "npx ts-node -e \"import('./src/db/database-manager').then(({DatabaseManager}) => DatabaseManager.healthCheck().then(console.log))\"",
+    "db:test": "npx ts-node -e \"import('./src/db/database-manager').then(({DatabaseManager}) => DatabaseManager.testConnection())\"",
+    "db:info": "npx ts-node -e \"import('./src/db/database-manager').then(({DatabaseManager}) => DatabaseManager.getConnectionInfo().then(console.log))\"",
     "preinstall": "apt-get update && apt-get install -y python3 make g++"
   },
   "repository": {

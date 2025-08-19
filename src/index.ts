@@ -12,6 +12,7 @@ import tagsRoutes from './routes/tags-new';
 import projectVersionsRoutes from './routes/project_versions_new';
 import tagImportRoutes from './routes/tagImport';
 import http from 'http';
+import { DatabaseManager } from './db/database-manager';
 // import { TagSyncService } from './services/tagSyncService';  // Disabled temporarily
 import { WebSocketServer } from 'ws';
 
@@ -116,6 +117,48 @@ app.get('/api/v1/simple-test', (req, res) => {
   res.json({ message: 'Simple test route works!' });
 });
 
+// Health check endpoint with database status
+app.get('/api/v1/health', async (req, res) => {
+  try {
+    const health = await DatabaseManager.healthCheck();
+    const statusCode = health.status === 'healthy' ? 200 : 503;
+    
+    res.status(statusCode).json({
+      service: 'Pandaura Backend',
+      ...health,
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      environment: process.env.NODE_ENV || 'development'
+    });
+  } catch (error) {
+    res.status(503).json({
+      service: 'Pandaura Backend',
+      status: 'unhealthy',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Database info endpoint (protected)
+app.get('/api/v1/db-info', async (req, res) => {
+  try {
+    const info = await DatabaseManager.getConnectionInfo();
+    const migrations = await DatabaseManager.checkMigrations();
+    
+    res.json({
+      database: info,
+      migrations: migrations,
+      environment: process.env.NODE_ENV || 'development'
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to get database info',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
 // WebSocket test endpoint
 app.get('/api/v1/ws-test', (req, res) => {
   res.json({
@@ -208,11 +251,45 @@ const wss = new WebSocketServer({
 // Pass WebSocket server to your TagSyncService
 // new TagSyncService(wss);  // Disabled temporarily
 
-server.listen(port, () => {
-  console.log(`Server is running on http://localhost:${port}`);
-  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
-});
+// Startup function with database checks
+async function startServer() {
+  try {
+    console.log('🚀 Starting Pandaura Backend...');
+    
+    // Test database connection
+    const isDbHealthy = await DatabaseManager.testConnection();
+    if (!isDbHealthy) {
+      console.error('❌ Database connection failed. Exiting...');
+      process.exit(1);
+    }
+    
+    // Check migrations
+    console.log('🔄 Checking database migrations...');
+    const migrationStatus = await DatabaseManager.checkMigrations();
+    if (migrationStatus.pendingMigrations.length > 0) {
+      console.log(`⚠️  ${migrationStatus.pendingMigrations.length} pending migrations found`);
+      console.log('💡 Run "npm run migrate" to apply pending migrations');
+    } else {
+      console.log('✅ Database migrations are up to date');
+    }
+    
+    // Start the server
+    server.listen(port, () => {
+      console.log(`✅ Server is running on http://localhost:${port}`);
+      console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`🖥️  Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
+      console.log(`📊 Health check: http://localhost:${port}/api/v1/health`);
+      console.log('🎉 Pandaura Backend is ready to serve requests!');
+    });
+    
+  } catch (error) {
+    console.error('❌ Failed to start server:', error);
+    process.exit(1);
+  }
+}
+
+// Start the server
+startServer();
 
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
