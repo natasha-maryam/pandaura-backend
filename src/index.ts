@@ -20,9 +20,10 @@ const server = http.createServer(app);
 // Security middleware
 app.use(helmet());
 
+// Configure CORS to handle multiple origins
 const allowedOrigins = [
-  "https://pandaura.vercel.app", // production frontend
-  "http://localhost:3000",       // local dev
+  "https://pandaura.vercel.app", // your frontend
+  "http://localhost:5173",       // local dev
   "http://127.0.0.1:3000"
 ];
 
@@ -30,20 +31,21 @@ app.use(
   cors({
     origin: (origin, callback) => {
       if (!origin) return callback(null, true); // allow Postman / mobile apps
+
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
-      console.log("❌ Blocked by CORS:", origin);
+
+      console.log("❌ CORS blocked origin:", origin);
       callback(new Error("Not allowed by CORS"));
     },
-    credentials: true, // allow cookies/auth headers
+    credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
   })
 );
 
-// 👇 important: handle preflight requests
-app.options("*", cors());
+
 // Body parsing middleware
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
