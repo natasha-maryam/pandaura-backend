@@ -27,18 +27,21 @@ const config: { [key: string]: Knex.Config } = {
 
   production: {
     client: 'postgresql',
-    connection: process.env.DATABASE_URL || 
-               process.env.POSTGRES_URL || 
-               'postgresql://postgres:nqvmfspKeGFgvUcgiSMSfRvXfcXQxEva@postgres.railway.internal:5432/railway',
+    connection: {
+      connectionString: process.env.DATABASE_URL || 
+                       process.env.POSTGRES_URL || 
+                       'postgresql://postgres:nqvmfspKeGFgvUcgiSMSfRvXfcXQxEva@postgres.railway.internal:5432/railway',
+      ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
+    },
     pool: {
-      min: 2,
-      max: 20,
-      acquireTimeoutMillis: 60000,
-      createTimeoutMillis: 30000,
-      destroyTimeoutMillis: 5000,
-      idleTimeoutMillis: 30000,
-      reapIntervalMillis: 1000,
-      createRetryIntervalMillis: 100,
+      min: 0,
+      max: 3,
+      acquireTimeoutMillis: 180000,
+      createTimeoutMillis: 60000,
+      destroyTimeoutMillis: 10000,
+      idleTimeoutMillis: 60000,
+      reapIntervalMillis: 10000,
+      createRetryIntervalMillis: 2000,
       propagateCreateError: false
     },
     migrations: {
@@ -48,7 +51,8 @@ const config: { [key: string]: Knex.Config } = {
     seeds: {
       directory: './knex-seeds'
     },
-    acquireConnectionTimeout: 60000
+    acquireConnectionTimeout: 180000,
+    asyncStackTraces: true
   },
 
   // Staging environment (optional)

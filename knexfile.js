@@ -26,21 +26,18 @@ const config = {
     },
     production: {
         client: 'postgresql',
-        connection: {
-            connectionString: process.env.DATABASE_URL ||
-                process.env.POSTGRES_URL ||
-                'postgresql://postgres:nqvmfspKeGFgvUcgiSMSfRvXfcXQxEva@postgres.railway.internal:5432/railway',
-            ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
-        },
+        connection: process.env.DATABASE_URL ||
+            process.env.POSTGRES_URL ||
+            'postgresql://postgres:nqvmfspKeGFgvUcgiSMSfRvXfcXQxEva@postgres.railway.internal:5432/railway',
         pool: {
-            min: 0,
-            max: 3,
-            acquireTimeoutMillis: 180000,
+            min: 1,
+            max: 5,
+            acquireTimeoutMillis: 120000,
             createTimeoutMillis: 60000,
             destroyTimeoutMillis: 10000,
             idleTimeoutMillis: 60000,
-            reapIntervalMillis: 10000,
-            createRetryIntervalMillis: 2000,
+            reapIntervalMillis: 5000,
+            createRetryIntervalMillis: 500,
             propagateCreateError: false
         },
         migrations: {
@@ -50,7 +47,7 @@ const config = {
         seeds: {
             directory: './knex-seeds'
         },
-        acquireConnectionTimeout: 180000,
+        acquireConnectionTimeout: 120000,
         asyncStackTraces: true
     },
     // Staging environment (optional)

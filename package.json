@@ -13,6 +13,7 @@
     "migrate:make": "npx knex migrate:make",
     "migrate:status": "npx knex migrate:status",
     "migrate:prod": "cross-env NODE_ENV=production npx knex migrate:latest",
+    "migrate:railway": "npm run build && cross-env NODE_ENV=production node migrate-railway.js",
     "db:seed": "npx knex seed:run",
     "db:clear": "node clear-database.js clear",
     "db:counts": "node clear-database.js counts",
