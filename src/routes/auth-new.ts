@@ -17,10 +17,11 @@ function generateInviteCode(): string {
 
 // Create Organization & Admin user
 router.post('/orgs', async (req, res) => {
+  console.log("called orgs for org")
   const { orgName, industry, size, fullName, email, password } = req.body;
   console.log("req for org", req.body)
 
-  if (!orgName || !fullName || !email || !password) {
+  if (!orgName || !fullName || !email || !password || !industry || !size) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
@@ -611,7 +612,7 @@ router.post('/login', async (req, res) => {
 // Helper function to bind temporary devices created during signup
 async function bindTempDevices(userId: string, email: string) {
   try {
-    console.log(`Binding temporary devices for user ${userId} with email ${email}`);
+    // console.log(`Binding temporary devices for user ${userId} with email ${email}`);
     
     // Find all temporary device bindings for this email (where user_id is null)
     const tempBindings = await db('device_bindings')
@@ -619,7 +620,7 @@ async function bindTempDevices(userId: string, email: string) {
       .where('email', email.toLowerCase())
       .where('expires_at', '>', new Date().toISOString());
     
-    console.log(`Found ${tempBindings.length} temporary device bindings for ${email}`);
+    // console.log(`Found ${tempBindings.length} temporary device bindings for ${email}`);
     
     // Update temporary bindings to permanent ones by setting user_id
     for (const tempBinding of tempBindings) {
@@ -633,7 +634,7 @@ async function bindTempDevices(userId: string, email: string) {
           last_used: new Date().toISOString()
         });
       
-      console.log(`Transferred device binding: ${tempBinding.instance_id_hash} for user ${userId}`);
+      // console.log(`Transferred device binding: ${tempBinding.instance_id_hash} for user ${userId}`);
     }
     
     console.log(`Transferred ${tempBindings.length} temporary device bindings to user ${userId}`);
