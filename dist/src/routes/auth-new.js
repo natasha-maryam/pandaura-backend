@@ -18,9 +18,9 @@ function generateInviteCode() {
 }
 // Create Organization & Admin user
 router.post('/orgs', async (req, res) => {
-    console.log("called orgs for org");
+    // console.log("called orgs for org")
     const { orgName, industry, size, fullName, email, password } = req.body;
-    console.log("req for org", req.body);
+    // console.log("req for org", req.body)
     if (!orgName || !fullName || !email || !password || !industry || !size) {
         return res.status(400).json({ error: 'Missing required fields' });
     }
