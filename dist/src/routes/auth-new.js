@@ -25,13 +25,13 @@ router.post('/orgs', async (req, res) => {
     try {
         // Create org
         const orgId = (0, uuid_1.v4)();
-        await (0, knex_1.default)('organizations').insert({
+        await (0, knex_1.default)("organizations").insert({
             id: orgId,
             name: orgName,
-            industry,
-            size,
+            industry: industry,
+            size: size,
             created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
         });
         // Hash password
         const passwordHash = await argon2_1.default.hash(password);

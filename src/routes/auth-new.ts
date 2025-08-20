@@ -26,13 +26,13 @@ router.post('/orgs', async (req, res) => {
   try {
     // Create org
     const orgId = uuidv4();
-    await db('organizations').insert({
+    await db("organizations").insert({
       id: orgId,
       name: orgName,
-      industry,
-      size,
+      industry: industry,
+      size: size,
       created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     });
 
     // Hash password
