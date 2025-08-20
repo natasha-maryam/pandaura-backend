@@ -28,6 +28,8 @@ router.post('/orgs', async (req, res) => {
         await (0, knex_1.default)('organizations').insert({
             id: orgId,
             name: orgName,
+            industry,
+            size,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
         });
@@ -43,7 +45,6 @@ router.post('/orgs', async (req, res) => {
             last_name: fullName.split(' ').slice(1).join(' ') || '',
             name: fullName, // Keep legacy field
             org_name: orgName, // Set organization name
-            industry,
             role: 'Admin',
             org_id: orgId,
             created_at: new Date().toISOString(),
