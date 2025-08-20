@@ -40,24 +40,19 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (mobile apps, Postman, etc.)
-      if (!origin) return callback(null, true);
+      if (!origin) return callback(null, true); // allow Postman, curl, etc.
 
-      // Check if origin is in allowed list
-      if (
-        allowedOrigins.some(
-          (allowedOrigin) =>
-            origin === allowedOrigin ||
-            origin.endsWith(".vercel.app") ||
-            origin.startsWith("http://localhost") ||
-            origin.startsWith("http://127.0.0.1")
-        )
-      ) {
+      const isAllowed =
+        allowedOrigins.includes(origin) ||
+        origin.endsWith(".vercel.app") ||
+        origin.startsWith("http://localhost") ||
+        origin.startsWith("http://127.0.0.1");
+
+      if (isAllowed) {
         return callback(null, true);
       }
 
       console.log("CORS blocked origin:", origin);
-      console.log("Allowed origins:", allowedOrigins);
       callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
@@ -65,6 +60,7 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
   })
 );
+
 
 // Body parsing middleware
 app.use(express.json({ limit: "10mb" }));
