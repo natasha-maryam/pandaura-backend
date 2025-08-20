@@ -156,26 +156,13 @@ app.get("/api/v1/ws-test", (req, res) => {
 // const rows = db.prepare("SELECT * FROM users").all();
 // console.log(rows)
 // Root health check endpoint for Railway
-app.get("/", async (req, res) => {
-    try {
-        const health = await database_manager_1.DatabaseManager.healthCheck();
-        const statusCode = health.status === "healthy" ? 200 : 503;
-        res.status(statusCode).json({
-            service: "Pandaura Backend",
-            ...health,
-            uptime: process.uptime(),
-            memory: process.memoryUsage(),
-            environment: process.env.NODE_ENV || "development",
-        });
-    }
-    catch (error) {
-        res.status(503).json({
-            service: "Pandaura Backend",
-            status: "unhealthy",
-            error: error instanceof Error ? error.message : "Unknown error",
-            timestamp: new Date().toISOString(),
-        });
-    }
+app.get("/", (req, res) => {
+    res.status(200).json({
+        status: "ok",
+        service: "Pandaura Backend",
+        timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV || "development",
+    });
 });
 // CORS debug endpoint
 app.get("/api/v1/cors-test", (req, res) => {
