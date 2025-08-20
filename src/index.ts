@@ -274,19 +274,6 @@ async function startServer() {
         "⚠️ Database connection failed. Continuing startup without DB."
       );
     }
-
-    // Check migrations
-    console.log("🔄 Checking database migrations...");
-    const migrationStatus = await DatabaseManager.checkMigrations();
-    if (migrationStatus.pendingMigrations.length > 0) {
-      console.log(
-        `⚠️  ${migrationStatus.pendingMigrations.length} pending migrations found`
-      );
-      console.log('💡 Run "npm run migrate" to apply pending migrations');
-    } else {
-      console.log("✅ Database migrations are up to date");
-    }
-
     // Start the server
     server.listen(port, () => {
       console.log(`✅ Server is running on http://localhost:${port}`);
