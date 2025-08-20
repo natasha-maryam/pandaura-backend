@@ -13,16 +13,20 @@ const knex_1 = __importDefault(require("../db/knex"));
 const JWT_SECRET = process.env.JWT_SECRET || '69d215b3cc191323c79a3a264f6ad2f194d02486f0001b4ae287b13542fcd2212e39ffda859f71f450edcde3944567db1a694a82155f74c749c2aa4e45fa8c17';
 function authenticateToken(req, res, next) {
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+    const headerToken = authHeader && authHeader.split(' ')[1];
+    const cookieToken = req.cookies?.authToken;
+    const token = headerToken || cookieToken;
     console.log('🔐 Auth middleware called:', {
         hasAuthHeader: !!authHeader,
+        hasHeaderToken: !!headerToken,
+        hasCookieToken: !!cookieToken,
         hasToken: !!token,
         tokenPrefix: token ? `${token.substring(0, 10)}...` : 'none',
         url: req.url,
         method: req.method
     });
     if (!token) {
-        console.log('❌ No token provided');
+        console.log('❌ No token provided in header or cookie');
         return res.status(401).json({ error: 'No token provided' });
     }
     try {
@@ -38,11 +42,11 @@ function authenticateToken(req, res, next) {
             role: decoded.role,
             email: decoded.email
         };
-        console.log('✅ Token verified for user:', {
-            userId: decoded.userId,
-            role: decoded.role,
-            orgId: decoded.orgId
-        });
+        // console.log('✅ Token verified for user:', {
+        //   userId: decoded.userId,
+        //   role: decoded.role,
+        //   orgId: decoded.orgId
+        // });
         next();
     }
     catch (err) {

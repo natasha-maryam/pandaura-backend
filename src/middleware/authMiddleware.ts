@@ -28,10 +28,14 @@ export interface TokenPayload {
 
 export function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  const headerToken = authHeader && authHeader.split(' ')[1];
+  const cookieToken = req.cookies?.authToken;
+  const token = headerToken || cookieToken;
 
   console.log('🔐 Auth middleware called:', {
     hasAuthHeader: !!authHeader,
+    hasHeaderToken: !!headerToken,
+    hasCookieToken: !!cookieToken,
     hasToken: !!token,
     tokenPrefix: token ? `${token.substring(0, 10)}...` : 'none',
     url: req.url,
@@ -39,7 +43,7 @@ export function authenticateToken(req: AuthenticatedRequest, res: Response, next
   });
 
   if (!token) {
-    console.log('❌ No token provided');
+    console.log('❌ No token provided in header or cookie');
     return res.status(401).json({ error: 'No token provided' });
   }
 
@@ -59,11 +63,11 @@ export function authenticateToken(req: AuthenticatedRequest, res: Response, next
       email: decoded.email
     };
     
-    console.log('✅ Token verified for user:', {
-      userId: decoded.userId,
-      role: decoded.role,
-      orgId: decoded.orgId
-    });
+    // console.log('✅ Token verified for user:', {
+    //   userId: decoded.userId,
+    //   role: decoded.role,
+    //   orgId: decoded.orgId
+    // });
     
     next();
   } catch (err) {

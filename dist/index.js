@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
+const cookie_parser_1 = __importDefault(require("cookie-parser"));
 const auth_new_1 = __importDefault(require("./routes/auth-new"));
 const orgs_new_1 = __importDefault(require("./routes/orgs.new"));
 const projects_new_1 = __importDefault(require("./routes/projects-new"));
@@ -58,6 +59,8 @@ app.use((0, cors_1.default)({
 // Body parsing middleware
 app.use(express_1.default.json({ limit: '10mb' }));
 app.use(express_1.default.urlencoded({ extended: true }));
+// Cookie parsing middleware
+app.use((0, cookie_parser_1.default)());
 // Add request logging
 app.use((req, res, next) => {
     console.log(`Incoming request: ${req.method} ${req.path} - Full URL: ${req.url}`);

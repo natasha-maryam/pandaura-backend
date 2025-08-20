@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import authRoutes from './routes/auth-new'; 
 import orgRoutes from './routes/orgs.new';
 import projectsRoutes from './routes/projects-new';
@@ -63,6 +64,9 @@ app.use(cors({
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+
+// Cookie parsing middleware
+app.use(cookieParser());
 
 // Add request logging
 app.use((req, res, next) => {

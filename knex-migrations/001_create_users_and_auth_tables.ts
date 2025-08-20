@@ -77,10 +77,6 @@ export async function up(knex: Knex): Promise<void> {
     table.text("device_fingerprint").notNullable();
     table.text("device_fingerprint_hash"); // Legacy field
     table.text("instance_id_hash"); // Legacy field
-    table.text("ip_address").notNullable();
-    table.text("user_agent").notNullable();
-    table.text("totp_secret").notNullable();
-    table.boolean("is_verified").defaultTo(false);
     table.timestamp("last_used").defaultTo(knex.fn.now());
     table.timestamp("bound_at").defaultTo(knex.fn.now()); // Legacy field
     table.timestamps(true, true);

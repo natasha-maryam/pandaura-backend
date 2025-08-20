@@ -37,11 +37,13 @@
   },
   "homepage": "https://github.com/jazykhan3/pandora-backend#readme",
   "dependencies": {
+    "@types/cookie-parser": "^1.4.9",
     "@types/knex": "^0.15.2",
     "@types/multer": "^2.0.0",
     "@types/ws": "^8.18.1",
     "@vercel/postgres": "^0.10.0",
     "argon2": "^0.31.2",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "csv-parse": "^6.1.0",
     "express": "^5.1.0",

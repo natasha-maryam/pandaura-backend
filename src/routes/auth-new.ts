@@ -79,9 +79,17 @@ router.post('/orgs', async (req, res) => {
     // Generate JWT token
     const token = generateToken({ userId, orgId, role: 'Admin' });
 
+    // Set HttpOnly secure cookie
+    res.cookie('authToken', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
+
     res.json({ 
       message: 'Organization and admin user created', 
-      token, 
+      token, // Still send in response for SPA compatibility
       orgId, 
       userId,
       role: 'Admin'
@@ -206,9 +214,17 @@ router.post('/invites/accept', async (req, res) => {
       role: invite.role || 'user' 
     });
 
+    // Set HttpOnly secure cookie
+    res.cookie('authToken', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
+
     res.json({ 
       message: 'User account created successfully', 
-      token, 
+      token, // Still send in response for SPA compatibility
       userId,
       orgId: invite.organization_id,
       role: invite.role || 'user'
@@ -476,6 +492,7 @@ router.post('/totp/verify', authenticateToken, async (req: AuthenticatedRequest,
       .where('id', req.user!.userId)
       .update({ 
         totp_enabled: true,
+        two_factor_enabled: true,
         updated_at: new Date().toISOString() 
       });
 
@@ -554,9 +571,17 @@ router.post('/login', async (req, res) => {
       role: teamMember?.role || user.role
     });
 
+    // Set HttpOnly secure cookie
+    res.cookie('authToken', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
+
     res.json({
       message: 'Login successful',
-      token,
+      token, // Still send in response for SPA compatibility
       userId: user.id,
       orgId: teamMember?.org_id,
       orgName: teamMember?.org_name,
@@ -572,11 +597,50 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Helper function to bind temporary devices (implementation depends on your device binding logic)
+// Helper function to bind temporary devices created during signup
 async function bindTempDevices(userId: string, email: string) {
-  // This would contain logic to bind any temporary devices created during signup
-  // Implementation depends on your specific device binding requirements
-  console.log(`Binding temporary devices for user ${userId} with email ${email}`);
+  try {
+    console.log(`Binding temporary devices for user ${userId} with email ${email}`);
+    
+    // Find all temporary device bindings for this email (where user_id is null)
+    const tempBindings = await db('device_bindings')
+      .whereNull('user_id')
+      .where('email', email.toLowerCase())
+      .where('expires_at', '>', new Date().toISOString());
+    
+    console.log(`Found ${tempBindings.length} temporary device bindings for ${email}`);
+    
+    // Update temporary bindings to permanent ones by setting user_id
+    for (const tempBinding of tempBindings) {
+      await db('device_bindings')
+        .where('id', tempBinding.id)
+        .update({
+          user_id: userId,
+          email: null, // Clear email since we now have user_id
+          expires_at: null, // Clear expiration since it's now permanent
+          updated_at: new Date().toISOString(),
+          last_used: new Date().toISOString()
+        });
+      
+      console.log(`Transferred device binding: ${tempBinding.instance_id_hash} for user ${userId}`);
+    }
+    
+    console.log(`Transferred ${tempBindings.length} temporary device bindings to user ${userId}`);
+    
+    // Clean up expired temporary bindings (housekeeping)
+    const deletedCount = await db('device_bindings')
+      .whereNull('user_id')
+      .where('expires_at', '<', new Date().toISOString())
+      .del();
+      
+    if (deletedCount > 0) {
+      console.log(`Cleaned up ${deletedCount} expired temporary device bindings`);
+    }
+      
+  } catch (error) {
+    console.error('Error binding temporary devices:', error);
+    // Don't throw - this shouldn't break the signup flow
+  }
 }
 
 // Get current user info
@@ -615,67 +679,127 @@ router.get('/me', authenticateToken, async (req: AuthenticatedRequest, res) => {
   }
 });
 
-// Signup device binding endpoint
+
+// Signup device binding endpoint (no authentication required - stores temporary binding)
 router.post('/signup-device-bind', async (req, res) => {
-  const { instanceId, fingerprint, email, signupToken, isOrgCreator } = req.body;
-
-  if (!instanceId || !fingerprint || !email) {
-    return res.status(400).json({ error: 'Missing required fields: instanceId, fingerprint, email' });
+  const { instanceId, deviceFingerprintHash, email } = req.body;
+  if (!instanceId || !deviceFingerprintHash || !email) {
+    return res.status(400).json({ error: 'Missing device binding info (instanceId, deviceFingerprintHash, email required)' });
   }
-
   try {
-    // Log the device binding attempt for audit purposes
+    // Check if this email+device combination already exists
+    const existingBinding = await db('device_bindings')
+      .where('email', email.toLowerCase())
+      .where('device_fingerprint', deviceFingerprintHash)
+      .first();
+    
+    if (existingBinding) {
+      // Update existing temporary binding
+      await db('device_bindings')
+        .where('id', existingBinding.id)
+        .update({
+          instance_id_hash: instanceId,
+          updated_at: new Date().toISOString(),
+          expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+        });
+    } else {
+      // Store new temporary device binding
+      await db('device_bindings').insert({
+        id: uuidv4(),
+        user_id: null, // Temporary binding without user
+        email: email.toLowerCase(),
+        device_fingerprint: deviceFingerprintHash,
+        device_fingerprint_hash: deviceFingerprintHash,
+        instance_id_hash: instanceId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
+        last_used: new Date().toISOString()
+      });
+    }
+    
+    // Log audit event without userId
     await logAuditEvent({
-      userId: undefined, // No user ID yet during signup
-      action: 'signup_device_bind_attempt',
-      metadata: { instanceId, fingerprint, isOrgCreator, email },
+      userId: undefined,
+      action: 'temp_device_bound',
+      metadata: { instanceId, deviceFingerprintHash, email },
       ip: req.ip,
       userAgent: req.get('User-Agent')
     });
-
-    // For now, we'll just acknowledge the binding request
-    // In a production environment, you might want to:
-    // 1. Store the device binding temporarily
-    // 2. Validate the device fingerprint
-    // 3. Check for any security concerns
-    // 4. Store the binding for later association with the user account
-
-    console.log('Device binding request:', {
-      instanceId,
-      fingerprint,
-      email,
-      signupToken,
-      isOrgCreator,
-      timestamp: new Date().toISOString()
-    });
-
-    // Store temporary device binding (this could be in a temporary table or cache)
-    // For now, we'll just return success
-    res.json({
-      success: true,
-      message: 'Device binding recorded for signup process',
-      bindingId: `bind_${instanceId}_${Date.now()}`,
-      timestamp: new Date().toISOString()
-    });
-
-  } catch (err) {
-    console.error('Signup device binding error:', err);
     
-    // Log the failed attempt
-    try {
-      await logAuditEvent({
-        userId: undefined,
-        action: 'signup_device_bind_failed',
-        metadata: { instanceId, fingerprint, email, error: err instanceof Error ? err.message : 'Unknown error' },
-        ip: req.ip,
-        userAgent: req.get('User-Agent')
-      });
-    } catch (logErr) {
-      console.error('Failed to log audit event:', logErr);
-    }
-
-    res.status(500).json({ error: 'Server error during device binding' });
+    res.json({ 
+      success: true, 
+      message: 'Device binding recorded for signup process',
+      bindingId: `temp_${instanceId}_${Date.now()}`
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to bind device' });
   }
+});
+
+// Device binding endpoint (requires authentication - for post-signup device binding)
+router.post('/device-bind', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  const { instanceId, deviceFingerprintHash } = req.body;
+  if (!instanceId || !deviceFingerprintHash) {
+    return res.status(400).json({ error: 'Missing device binding info' });
+  }
+  try {
+    // Check if this user+device combination already exists
+    const existingBinding = await db('device_bindings')
+      .where('user_id', req.user!.userId)
+      .where('device_fingerprint', deviceFingerprintHash)
+      .first();
+    
+    if (existingBinding) {
+      // Update existing binding
+      await db('device_bindings')
+        .where('id', existingBinding.id)
+        .update({
+          instance_id_hash: instanceId,
+          updated_at: new Date().toISOString(),
+          last_used: new Date().toISOString()
+        });
+    } else {
+      // Insert new permanent device binding
+      await db('device_bindings').insert({
+        id: uuidv4(),
+        user_id: req.user!.userId,
+        device_fingerprint: deviceFingerprintHash,
+        device_fingerprint_hash: deviceFingerprintHash,
+        instance_id_hash: instanceId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        last_used: new Date().toISOString()
+      });
+    }
+    
+    // Log audit event
+    await logAuditEvent({
+      userId: req.user!.userId,
+      action: 'device_bound',
+      metadata: { instanceId, deviceFingerprintHash },
+      ip: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+    
+    res.json({ success: true, message: 'Device bound successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to bind device' });
+  }
+});
+
+// Logout endpoint
+router.post('/logout', (req, res) => {
+  // Clear the HttpOnly cookie
+  res.clearCookie('authToken', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict'
+  });
+  
+  res.json({ message: 'Logged out successfully' });
 });
 
 export default router;
