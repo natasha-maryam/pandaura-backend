@@ -1,4 +1,5 @@
 const knex = require('knex');
+require('dotenv').config();
 
 // Railway specific configuration
 const config = {
