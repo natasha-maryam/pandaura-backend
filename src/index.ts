@@ -1,21 +1,19 @@
-import express from 'express';
-import cors from 'cors';
-import helmet from 'helmet';
-import cookieParser from 'cookie-parser';
-import authRoutes from './routes/auth-new'; 
-import orgRoutes from './routes/orgs.new';
-import projectsRoutes from './routes/projects-new';
-import tagsRoutes from './routes/tags-new';
-import projectVersionsRoutes from './routes/project_versions_new';
+import express from "express";
+import cors from "cors";
+import helmet from "helmet";
+import cookieParser from "cookie-parser";
+import authRoutes from "./routes/auth-new";
+import orgRoutes from "./routes/orgs.new";
+import projectsRoutes from "./routes/projects-new";
+import tagsRoutes from "./routes/tags-new";
+import projectVersionsRoutes from "./routes/project_versions_new";
 // import tagImportRoutes from './routes/tagImport';
-import http from 'http';
-import { DatabaseManager } from './db/database-manager';
+import http from "http";
+import { DatabaseManager } from "./db/database-manager";
 // import { TagSyncService } from './services/tagSyncService';  // Disabled temporarily
-import { WebSocketServer } from 'ws';
+import { WebSocketServer } from "ws";
 
-
-
-const app = express()
+const app = express();
 const port = process.env.PORT || 5000;
 const server = http.createServer(app);
 
@@ -24,45 +22,52 @@ app.use(helmet());
 
 // Configure CORS to handle multiple origins
 const allowedOrigins = [
-  process.env.FRONTEND_URL || 'http://localhost:5173',
+  process.env.FRONTEND_URL || "http://localhost:5173",
   process.env.CORS_ORIGIN,
   // Parse additional CORS origins from environment
-  ...(process.env.ADDITIONAL_CORS_ORIGINS?.split(',') || []),
+  ...(process.env.ADDITIONAL_CORS_ORIGINS?.split(",") || []),
   // Default development origins
-  'http://localhost:5173',
-  'http://localhost:5174',
-  'http://localhost:3000',
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://localhost:3000",
   // Common production domains
-  'https://pandaura.vercel.app',
-  'https://pandaura-frontend.vercel.app',
-].filter((origin): origin is string => Boolean(origin)).map(origin => origin.trim()); // Remove any undefined values and trim whitespace
+  "https://pandaura.vercel.app",
+  "https://pandaura-frontend.vercel.app",
+]
+  .filter((origin): origin is string => Boolean(origin))
+  .map((origin) => origin.trim()); // Remove any undefined values and trim whitespace
 
-app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, Postman, etc.)
-    if (!origin) return callback(null, true);
-    
-    // Check if origin is in allowed list
-    if (allowedOrigins.some(allowedOrigin => 
-      origin === allowedOrigin || 
-      origin.endsWith('.vercel.app') ||
-      origin.startsWith('http://localhost') ||
-      origin.startsWith('http://127.0.0.1')
-    )) {
-      return callback(null, true);
-    }
-    
-    console.log('CORS blocked origin:', origin);
-    console.log('Allowed origins:', allowedOrigins);
-    callback(new Error('Not allowed by CORS'));
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-}));
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, Postman, etc.)
+      if (!origin) return callback(null, true);
+
+      // Check if origin is in allowed list
+      if (
+        allowedOrigins.some(
+          (allowedOrigin) =>
+            origin === allowedOrigin ||
+            origin.endsWith(".vercel.app") ||
+            origin.startsWith("http://localhost") ||
+            origin.startsWith("http://127.0.0.1")
+        )
+      ) {
+        return callback(null, true);
+      }
+
+      console.log("CORS blocked origin:", origin);
+      console.log("Allowed origins:", allowedOrigins);
+      callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  })
+);
 
 // Body parsing middleware
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 // Cookie parsing middleware
@@ -70,182 +75,193 @@ app.use(cookieParser());
 
 // Add request logging
 app.use((req, res, next) => {
-  console.log(`Incoming request: ${req.method} ${req.path} - Full URL: ${req.url}`);
+  console.log(
+    `Incoming request: ${req.method} ${req.path} - Full URL: ${req.url}`
+  );
   next();
 });
 
 // Trust proxy for accurate IP addresses in audit logs
-app.set('trust proxy', true);
+app.set("trust proxy", true);
 
 // Initialize database tables - No longer needed with Knex migrations
 // initializeTables().catch(console.error);
 
 // Routes
-app.use('/api/v1/auth', authRoutes);  
-app.use('/api/v1/orgs', orgRoutes);
-app.use('/api/v1/projects', projectsRoutes);
-app.use('/api/v1/tags', tagsRoutes);
+app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/orgs", orgRoutes);
+app.use("/api/v1/projects", projectsRoutes);
+app.use("/api/v1/tags", tagsRoutes);
 // Tag import routes
 // app.use('/api/v1/tags', tagImportRoutes);
 // Register version control routes under projects
-app.use('/api/v1/projects', projectVersionsRoutes);
+app.use("/api/v1/projects", projectVersionsRoutes);
 
 // Log registered routes for debugging
-app.once('mount', () => {
-  console.log('\nRegistered Routes:');
-  console.log('=================');
-  console.log('GET     /api/v1/auth/*');
-  console.log('GET     /api/v1/orgs/*');
-  console.log('GET     /api/v1/test/*');
-  console.log('GET     /api/v1/projects/*');
-  console.log('GET     /api/v1/tags/*');
-  console.log('GET     /api/v1/versions/projects/:projectId/versions');
-  console.log('GET     /api/v1/versions/projects/:projectId/version/:versionNumber');
-  console.log('POST    /api/v1/versions/projects/:projectId/version');
-  console.log('POST    /api/v1/versions/projects/:projectId/version/:versionNumber/rollback');
-  console.log('POST    /api/v1/versions/projects/:projectId/auto-save');
-  console.log('GET     /api/v1/versions/projects/:projectId/auto-save');
-  console.log('GET     /api/v1/versions/projects/:projectId/audit');
-  console.log('POST    /api/v1/versions/projects/:projectId/cleanup');
-  console.log('=================\n');
+app.once("mount", () => {
+  console.log("\nRegistered Routes:");
+  console.log("=================");
+  console.log("GET     /api/v1/auth/*");
+  console.log("GET     /api/v1/orgs/*");
+  console.log("GET     /api/v1/test/*");
+  console.log("GET     /api/v1/projects/*");
+  console.log("GET     /api/v1/tags/*");
+  console.log("GET     /api/v1/versions/projects/:projectId/versions");
+  console.log(
+    "GET     /api/v1/versions/projects/:projectId/version/:versionNumber"
+  );
+  console.log("POST    /api/v1/versions/projects/:projectId/version");
+  console.log(
+    "POST    /api/v1/versions/projects/:projectId/version/:versionNumber/rollback"
+  );
+  console.log("POST    /api/v1/versions/projects/:projectId/auto-save");
+  console.log("GET     /api/v1/versions/projects/:projectId/auto-save");
+  console.log("GET     /api/v1/versions/projects/:projectId/audit");
+  console.log("POST    /api/v1/versions/projects/:projectId/cleanup");
+  console.log("=================\n");
 });
 
-
 // Add a simple test route
-app.get('/api/v1/simple-test', (req, res) => {
-  console.log('Simple test route hit!');
-  res.json({ message: 'Simple test route works!' });
+app.get("/api/v1/simple-test", (req, res) => {
+  console.log("Simple test route hit!");
+  res.json({ message: "Simple test route works!" });
 });
 
 // Health check endpoint with database status
-app.get('/api/v1/health', async (req, res) => {
+app.get("/api/v1/health", async (req, res) => {
   try {
     const health = await DatabaseManager.healthCheck();
-    const statusCode = health.status === 'healthy' ? 200 : 503;
-    
+    const statusCode = health.status === "healthy" ? 200 : 503;
+
     res.status(statusCode).json({
-      service: 'Pandaura Backend',
+      service: "Pandaura Backend",
       ...health,
       uptime: process.uptime(),
       memory: process.memoryUsage(),
-      environment: process.env.NODE_ENV || 'development'
+      environment: process.env.NODE_ENV || "development",
     });
   } catch (error) {
     res.status(503).json({
-      service: 'Pandaura Backend',
-      status: 'unhealthy',
-      error: error instanceof Error ? error.message : 'Unknown error',
-      timestamp: new Date().toISOString()
+      service: "Pandaura Backend",
+      status: "unhealthy",
+      error: error instanceof Error ? error.message : "Unknown error",
+      timestamp: new Date().toISOString(),
     });
   }
 });
 
 // Database info endpoint (protected)
-app.get('/api/v1/db-info', async (req, res) => {
+app.get("/api/v1/db-info", async (req, res) => {
   try {
     const info = await DatabaseManager.getConnectionInfo();
     const migrations = await DatabaseManager.checkMigrations();
-    
+
     res.json({
       database: info,
       migrations: migrations,
-      environment: process.env.NODE_ENV || 'development'
+      environment: process.env.NODE_ENV || "development",
     });
   } catch (error) {
     res.status(500).json({
-      error: 'Failed to get database info',
-      message: error instanceof Error ? error.message : 'Unknown error'
+      error: "Failed to get database info",
+      message: error instanceof Error ? error.message : "Unknown error",
     });
   }
 });
 
 // WebSocket test endpoint
-app.get('/api/v1/ws-test', (req, res) => {
+app.get("/api/v1/ws-test", (req, res) => {
   res.json({
-    message: 'WebSocket server should be running',
-    wsEndpoints: ['/ws/tags', '/ws/test'],
-    serverTime: new Date().toISOString()
+    message: "WebSocket server should be running",
+    wsEndpoints: ["/ws/tags", "/ws/test"],
+    serverTime: new Date().toISOString(),
   });
 });
-
 
 // const rows = db.prepare("SELECT * FROM users").all();
 // console.log(rows)
 
-app.get('/', (req, res) => {
-  res.json({ 
-    message: 'Pandaura AS Backend API',
-    version: '1.0.0',
-    status: 'running',
+app.get("/", (req, res) => {
+  res.json({
+    message: "Pandaura AS Backend API",
+    version: "1.0.0",
+    status: "running",
     endpoints: {
-      auth: '/api/v1/auth',
-      organizations: '/api/v1/orgs',
-      projects: '/api/v1/projects',
-      tags: '/api/v1/tags',
-      test: '/api/v1/test'
-    }
+      auth: "/api/v1/auth",
+      organizations: "/api/v1/orgs",
+      projects: "/api/v1/projects",
+      tags: "/api/v1/tags",
+      test: "/api/v1/test",
+    },
   });
 });
 
 // CORS debug endpoint
-app.get('/api/v1/cors-test', (req, res) => {
+app.get("/api/v1/cors-test", (req, res) => {
   res.json({
-    message: 'CORS is working!',
+    message: "CORS is working!",
     origin: req.headers.origin,
     timestamp: new Date().toISOString(),
-    headers: req.headers
+    headers: req.headers,
   });
 });
 
 // Error handling middleware
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('Error:', err);
-  res.status(500).json({ error: 'Internal server error' });
-});
+app.use(
+  (
+    err: any,
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction
+  ) => {
+    console.error("Error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+);
 
 // 404 handler
 app.use((req, res) => {
-  res.status(404).json({ error: 'Endpoint not found' });
+  res.status(404).json({ error: "Endpoint not found" });
 });
-
 
 const allowedWsOrigins = allowedOrigins;
 // console.log('🌐 Allowed WebSocket origins:', allowedWsOrigins);
 
 const wss = new WebSocketServer({
   server,
-  path: '/ws/tags',  // Only handle /ws/tags path
+  path: "/ws/tags", // Only handle /ws/tags path
   verifyClient: (info, done) => {
-    console.log('🔍 WebSocket connection attempt:');
-    console.log('  - URL:', info.req.url);
-    console.log('  - Origin:', info.origin || 'none');
-    console.log('  - Host:', info.req.headers.host);
+    console.log("🔍 WebSocket connection attempt:");
+    console.log("  - URL:", info.req.url);
+    console.log("  - Origin:", info.origin || "none");
+    console.log("  - Host:", info.req.headers.host);
 
     const origin = info.origin;
 
     // Allow connections without origin (for testing) or from allowed origins
     if (!origin) {
-      console.log('✅ No origin header - allowing connection');
+      console.log("✅ No origin header - allowing connection");
       done(true);
       return;
     }
 
-    const isAllowed = allowedWsOrigins.some(allowedOrigin =>
-      origin === allowedOrigin ||
-      origin.endsWith('.vercel.app') ||
-      origin.startsWith('http://localhost') ||
-      origin.startsWith('http://127.0.0.1')
+    const isAllowed = allowedWsOrigins.some(
+      (allowedOrigin) =>
+        origin === allowedOrigin ||
+        origin.endsWith(".vercel.app") ||
+        origin.startsWith("http://localhost") ||
+        origin.startsWith("http://127.0.0.1")
     );
 
     if (isAllowed) {
-      console.log('✅ Origin allowed:', origin);
+      console.log("✅ Origin allowed:", origin);
       done(true);
     } else {
-      console.log('❌ WS blocked origin:', origin);
-      console.log('✅ Allowed WS origins:', allowedWsOrigins);
-      done(false, 403, 'Forbidden');
+      console.log("❌ WS blocked origin:", origin);
+      console.log("✅ Allowed WS origins:", allowedWsOrigins);
+      done(false, 403, "Forbidden");
     }
-  }
+  },
 });
 
 // Pass WebSocket server to your TagSyncService
@@ -254,36 +270,42 @@ const wss = new WebSocketServer({
 // Startup function with database checks
 async function startServer() {
   try {
-    console.log('🚀 Starting Pandaura Backend...');
-    
+    console.log("🚀 Starting Pandaura Backend...");
+
     // Test database connection
     const isDbHealthy = await DatabaseManager.testConnection();
     if (!isDbHealthy) {
-      console.error('❌ Database connection failed. Exiting...');
-      process.exit(1);
+      console.warn(
+        "⚠️ Database connection failed. Continuing startup without DB."
+      );
     }
-    
+
     // Check migrations
-    console.log('🔄 Checking database migrations...');
+    console.log("🔄 Checking database migrations...");
     const migrationStatus = await DatabaseManager.checkMigrations();
     if (migrationStatus.pendingMigrations.length > 0) {
-      console.log(`⚠️  ${migrationStatus.pendingMigrations.length} pending migrations found`);
+      console.log(
+        `⚠️  ${migrationStatus.pendingMigrations.length} pending migrations found`
+      );
       console.log('💡 Run "npm run migrate" to apply pending migrations');
     } else {
-      console.log('✅ Database migrations are up to date');
+      console.log("✅ Database migrations are up to date");
     }
-    
+
     // Start the server
     server.listen(port, () => {
       console.log(`✅ Server is running on http://localhost:${port}`);
-      console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log(`🖥️  Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
+      console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
+      console.log(
+        `🖥️  Frontend URL: ${
+          process.env.FRONTEND_URL || "http://localhost:5173"
+        }`
+      );
       console.log(`📊 Health check: http://localhost:${port}/api/v1/health`);
-      console.log('🎉 Pandaura Backend is ready to serve requests!');
+      console.log("🎉 Pandaura Backend is ready to serve requests!");
     });
-    
   } catch (error) {
-    console.error('❌ Failed to start server:', error);
+    console.error("❌ Failed to start server:", error);
     process.exit(1);
   }
 }
@@ -291,10 +313,10 @@ async function startServer() {
 // Start the server
 startServer();
 
-process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error);
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught Exception:", error);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
 });
