@@ -25,7 +25,7 @@ const config = {
         debug: process.env.NODE_ENV === "development",
     },
     production: {
-        client: "postgresql",
+        client: "pg",
         connection: {
             connectionString: process.env.DATABASE_URL ||
                 process.env.POSTGRES_URL,
