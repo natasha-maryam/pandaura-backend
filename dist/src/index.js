@@ -24,34 +24,18 @@ const server = http_1.default.createServer(app);
 app.use((0, helmet_1.default)());
 // Configure CORS to handle multiple origins
 const allowedOrigins = [
-    process.env.FRONTEND_URL || "http://localhost:5173",
-    process.env.CORS_ORIGIN,
-    // Parse additional CORS origins from environment
-    ...(process.env.ADDITIONAL_CORS_ORIGINS?.split(",") || []),
-    // Default development origins
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://localhost:3000",
-    // Common production domains
-    "https://pandaura.vercel.app",
-    "https://pandaura-frontend.vercel.app",
-]
-    .filter((origin) => Boolean(origin))
-    .map((origin) => origin.trim()); // Remove any undefined values and trim whitespace
+    "https://pandaura.vercel.app", // your frontend
+    "http://localhost:5173", // local dev
+    "http://127.0.0.1:3000"
+];
 app.use((0, cors_1.default)({
     origin: (origin, callback) => {
-        // Allow requests with no origin (mobile apps, Postman, etc.)
         if (!origin)
-            return callback(null, true);
-        // Check if origin is in allowed list
-        if (allowedOrigins.some((allowedOrigin) => origin === allowedOrigin ||
-            origin.endsWith(".vercel.app") ||
-            origin.startsWith("http://localhost") ||
-            origin.startsWith("http://127.0.0.1"))) {
+            return callback(null, true); // allow Postman / mobile apps
+        if (allowedOrigins.includes(origin)) {
             return callback(null, true);
         }
-        console.log("CORS blocked origin:", origin);
-        console.log("Allowed origins:", allowedOrigins);
+        console.log("❌ CORS blocked origin:", origin);
         callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
