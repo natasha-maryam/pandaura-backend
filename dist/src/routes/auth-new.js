@@ -441,7 +441,7 @@ router.post('/totp/verify', authMiddleware_1.authenticateToken, async (req, res)
 });
 // Login endpoint
 router.post('/login', async (req, res) => {
-    const { email, password, deviceFingerprint, totpToken } = req.body;
+    const { email, password, deviceFingerprint, twoFactorToken } = req.body;
     if (!email || !password) {
         return res.status(400).json({ error: 'Email and password required' });
     }
@@ -459,28 +459,29 @@ router.post('/login', async (req, res) => {
         }
         // Check if TOTP is enabled
         if (user.totp_enabled) {
-            if (!totpToken) {
+            if (!twoFactorToken) {
                 return res.status(200).json({
-                    requiresTOTP: true,
+                    requiresTwoFactor: true,
                     message: 'TOTP token required'
                 });
             }
             const verified = speakeasy_1.default.totp.verify({
                 secret: user.totp_secret,
                 encoding: 'base32',
-                token: totpToken,
+                token: twoFactorToken,
                 window: 2
             });
             if (!verified) {
                 return res.status(401).json({ error: 'Invalid TOTP token' });
             }
         }
-        // Get user's organization membership
-        const teamMember = await (0, knex_1.default)('team_members as tm')
+        // Get user's organization memberships (all organizations the user belongs to)
+        const userOrganizations = await (0, knex_1.default)('team_members as tm')
             .join('organizations as o', 'tm.organization_id', 'o.id')
-            .select('tm.role', 'o.id as org_id', 'o.name as org_name')
-            .where('tm.user_id', user.id)
-            .first();
+            .select('tm.role', 'o.id as org_id', 'o.name as org_name', 'o.industry', 'o.size')
+            .where('tm.user_id', user.id);
+        // Get the primary organization (first one or default)
+        const primaryOrg = userOrganizations[0];
         // Log successful login
         await (0, auditLogger_1.logAuditEvent)({
             userId: user.id,
@@ -492,8 +493,8 @@ router.post('/login', async (req, res) => {
         // Generate JWT token
         const token = (0, authMiddleware_1.generateToken)({
             userId: user.id,
-            orgId: teamMember?.org_id,
-            role: teamMember?.role || user.role
+            orgId: primaryOrg?.org_id,
+            role: primaryOrg?.role || user.role
         });
         // Set HttpOnly secure cookie
         res.cookie('authToken', token, {
@@ -506,12 +507,13 @@ router.post('/login', async (req, res) => {
             message: 'Login successful',
             token, // Still send in response for SPA compatibility
             userId: user.id,
-            orgId: teamMember?.org_id,
-            orgName: teamMember?.org_name,
-            role: teamMember?.role || user.role,
-            firstName: user.first_name,
-            lastName: user.last_name,
-            email: user.email
+            fullName: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
+            email: user.email,
+            twoFactorEnabled: user.totp_enabled || false,
+            orgId: primaryOrg?.org_id,
+            orgName: primaryOrg?.org_name,
+            role: primaryOrg?.role || user.role,
+            organizations: userOrganizations
         });
     }
     catch (err) {

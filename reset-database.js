@@ -49,22 +49,53 @@ async function resetDatabase() {
     console.log('Tables to be dropped:', tables.join(', '));
     
     // Drop all tables
-    console.log('\n🗑️  Dropping all tables...');
+    console.log('\n🗑️  Dropping all tables with CASCADE...');
     
-    // Disable foreign key checks temporarily
-    await db.raw('SET session_replication_role = replica;');
-    
+    // First, try to drop with CASCADE to handle dependencies
     for (const table of tables) {
       try {
-        await db.schema.dropTableIfExists(table);
+        await db.raw(`DROP TABLE IF EXISTS "${table}" CASCADE`);
         console.log(`  ✅ Dropped table: ${table}`);
       } catch (error) {
         console.log(`  ⚠️  Could not drop ${table}:`, error.message);
       }
     }
     
-    // Re-enable foreign key checks
-    await db.raw('SET session_replication_role = DEFAULT;');
+    // Double-check: get remaining tables and force drop them
+    const remainingResult = await db.raw(`
+      SELECT tablename 
+      FROM pg_tables 
+      WHERE schemaname = 'public' 
+      AND tablename NOT LIKE 'pg_%' 
+      AND tablename NOT LIKE 'sql_%'
+    `);
+    
+    const remainingTables = remainingResult.rows.map(row => row.tablename);
+    
+    if (remainingTables.length > 0) {
+      console.log('\n🔄 Force dropping remaining tables:', remainingTables.join(', '));
+      
+      // Drop all remaining tables in one command with CASCADE
+      const tablesList = remainingTables.map(t => `"${t}"`).join(', ');
+      try {
+        await db.raw(`DROP TABLE IF EXISTS ${tablesList} CASCADE`);
+        console.log('  ✅ Force dropped all remaining tables');
+      } catch (error) {
+        console.log('  ⚠️  Force drop failed:', error.message);
+        
+        // Last resort: drop schema and recreate
+        console.log('\n🚨 Using nuclear option: dropping and recreating schema...');
+        try {
+          await db.raw('DROP SCHEMA public CASCADE');
+          await db.raw('CREATE SCHEMA public');
+          await db.raw('GRANT ALL ON SCHEMA public TO postgres');
+          await db.raw('GRANT ALL ON SCHEMA public TO public');
+          console.log('  ✅ Schema recreated successfully');
+        } catch (schemaError) {
+          console.log('  ❌ Schema recreation failed:', schemaError.message);
+        }
+      }
+    }
     
     console.log('\n✅ Database reset complete!');
     console.log('💡 You can now run: npm run migrate:railway');

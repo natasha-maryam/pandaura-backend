@@ -25,7 +25,7 @@ async function runMigrations() {
     console.log('- Please set DATABASE_URL or POSTGRES_URL environment variable');
   }
   
-  // Enhanced configuration for Railway
+  // Enhanced configuration for Railway with forced reset capability
   const dbConfig = {
     ...config[environment],
     pool: {
@@ -71,7 +71,45 @@ async function runMigrations() {
     await Promise.race([connectionTest(), timeoutPromise]);
     console.log('✅ Database connection successful');
     
-    console.log('🔄 Running migrations...');
+    // Check if we need to reset the database first
+    console.log('\n🔍 Checking for existing tables...');
+    const tablesResult = await db.raw(`
+      SELECT tablename 
+      FROM pg_tables 
+      WHERE schemaname = 'public' 
+      AND tablename NOT LIKE 'pg_%' 
+      AND tablename NOT LIKE 'sql_%'
+    `);
+    
+    const existingTables = tablesResult.rows.map(row => row.tablename);
+    
+    if (existingTables.length > 0) {
+      console.log('⚠️  Found existing tables:', existingTables.join(', '));
+      console.log('🗑️  Clearing database before migration...');
+      
+      // Force drop all tables with CASCADE
+      try {
+        const tablesList = existingTables.map(t => `"${t}"`).join(', ');
+        await db.raw(`DROP TABLE IF EXISTS ${tablesList} CASCADE`);
+        console.log('✅ All existing tables dropped successfully');
+      } catch (dropError) {
+        console.log('⚠️  Standard drop failed, using nuclear option...');
+        try {
+          await db.raw('DROP SCHEMA public CASCADE');
+          await db.raw('CREATE SCHEMA public');
+          await db.raw('GRANT ALL ON SCHEMA public TO postgres');
+          await db.raw('GRANT ALL ON SCHEMA public TO public');
+          console.log('✅ Schema recreated successfully');
+        } catch (schemaError) {
+          console.error('❌ Schema recreation failed:', schemaError.message);
+          throw schemaError;
+        }
+      }
+    } else {
+      console.log('✅ Database is clean, no existing tables found');
+    }
+    
+    console.log('\n🔄 Running fresh migrations...');
     const [batchNo, migrationsList] = await db.migrate.latest();
     
     if (migrationsList.length === 0) {

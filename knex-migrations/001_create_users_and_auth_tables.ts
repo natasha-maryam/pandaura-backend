@@ -5,6 +5,8 @@ export async function up(knex: Knex): Promise<void> {
   await knex.schema.createTable("organizations", (table) => {
     table.text("id").primary();
     table.text("name").notNullable();
+    table.text("industry").notNullable();
+    table.text("size").notNullable();
     table.timestamps(true, true);
   });
 
@@ -17,7 +19,6 @@ export async function up(knex: Knex): Promise<void> {
     table.text("last_name").defaultTo("");
     table.text("name"); // Legacy field for compatibility
     table.text("org_name");
-    table.text("industry");
     table.text("role");
     table.boolean("is_active").defaultTo(true);
     table.boolean("email_verified").defaultTo(false);
