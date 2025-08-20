@@ -30,7 +30,7 @@ const config: { [key: string]: Knex.Config } = {
     connection: {
       connectionString: process.env.DATABASE_URL || 
                        process.env.POSTGRES_URL || 
-                       'postgresql://postgres:nqvmfspKeGFgvUcgiSMSfRvXfcXQxEva@postgres.railway.internal:5432/railway',
+                       'postgresql://postgres:nqvmfspKeGFgvUcgiSMSfRvXfcXQxEva@nozomi.proxy.rlwy.net:42516/railway',
       ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
     },
     pool: {
