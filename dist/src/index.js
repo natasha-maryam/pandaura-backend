@@ -24,10 +24,6 @@ const server = http_1.default.createServer(app);
 const allowedOrigins = [
     "https://pandaura.vercel.app", // your frontend
     "http://localhost:5173", // local dev (vite default)
-    "http://localhost:5174", // local dev (vite fallback)
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:5174"
 ];
 const corsOptions = {
     origin: (origin, callback) => {
@@ -210,7 +206,7 @@ async function startServer() {
             console.warn("⚠️ Database connection failed. Continuing startup without DB.");
         }
         // Start the server
-        server.listen(port, () => {
+        server.listen({ port, host: "0.0.0.0" }, () => {
             console.log(`✅ Server is running on http://localhost:${port}`);
             console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
             console.log(`🖥️  Frontend URL: ${process.env.FRONTEND_URL || "http://localhost:5173"}`);
