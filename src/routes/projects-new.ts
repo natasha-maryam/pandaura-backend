@@ -57,6 +57,7 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res) => {
     });
 
     res.status(201).json({
+      success: true,
       message: 'Project created successfully',
       project: {
         id: project.id,
@@ -95,6 +96,7 @@ router.get('/', authenticateToken, async (req: AuthenticatedRequest, res) => {
     }));
 
     res.json({
+      success: true,
       projects: formattedProjects,
       totalCount: formattedProjects.length
     });
@@ -124,6 +126,7 @@ router.get('/:projectId', authenticateToken, async (req: AuthenticatedRequest, r
     // No need to verify user ownership since getProjectById already filters by userId
 
     res.json({
+      success: true,
       project: {
         id: project.id,
         projectName: project.project_name,

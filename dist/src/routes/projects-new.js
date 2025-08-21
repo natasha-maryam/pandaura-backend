@@ -54,6 +54,7 @@ router.post('/', authMiddleware_1.authenticateToken, async (req, res) => {
             metadata: { projectId: project.id, projectName: validatedProjectName }
         });
         res.status(201).json({
+            success: true,
             message: 'Project created successfully',
             project: {
                 id: project.id,
@@ -90,6 +91,7 @@ router.get('/', authMiddleware_1.authenticateToken, async (req, res) => {
             autosaveState: project.autosave_state ? JSON.parse(project.autosave_state) : null
         }));
         res.json({
+            success: true,
             projects: formattedProjects,
             totalCount: formattedProjects.length
         });
@@ -114,6 +116,7 @@ router.get('/:projectId', authMiddleware_1.authenticateToken, async (req, res) =
         }
         // No need to verify user ownership since getProjectById already filters by userId
         res.json({
+            success: true,
             project: {
                 id: project.id,
                 projectName: project.project_name,

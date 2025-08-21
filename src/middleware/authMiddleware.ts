@@ -36,15 +36,15 @@ export function authenticateToken(req: AuthenticatedRequest, res: Response, next
   const cookieToken = req.cookies?.authToken;
   const token = headerToken || cookieToken;
 
-  console.log('🔐 Auth middleware called:', {
-    hasAuthHeader: !!authHeader,
-    hasHeaderToken: !!headerToken,
-    hasCookieToken: !!cookieToken,
-    hasToken: !!token,
-    tokenPrefix: token ? `${token.substring(0, 10)}...` : 'none',
-    url: req.url,
-    method: req.method
-  });
+  // console.log('🔐 Auth middleware called:', {
+  //   hasAuthHeader: !!authHeader,
+  //   hasHeaderToken: !!headerToken,
+  //   hasCookieToken: !!cookieToken,
+  //   hasToken: !!token,
+  //   tokenPrefix: token ? `${token.substring(0, 10)}...` : 'none',
+  //   url: req.url,
+  //   method: req.method
+  // });
 
   if (!token) {
     console.log('❌ No token provided in header or cookie');
