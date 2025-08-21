@@ -156,18 +156,18 @@ app.get("/api/v1/ws-test", (req, res) => {
 // console.log(rows)
 
 // Root health check endpoint for Railway
-// app.get("/", (req, res) => {
-//   res.status(200).json({
-//     status: "ok",
-//     service: "Pandaura Backend",
-//     timestamp: new Date().toISOString(),
-//     environment: process.env.NODE_ENV || "development",
-//   });
-// });
-
 app.get("/", (req, res) => {
-  res.send("🚀 Pandaura Backend is running!");
+  res.status(200).json({
+    status: "ok",
+    service: "Pandaura Backend",
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || "development",
+  });
 });
+
+// app.get("/", (req, res) => {
+//   res.send("🚀 Pandaura Backend is running!");
+// });
 
 // CORS debug endpoint
 app.get("/api/v1/cors-test", (req, res) => {
