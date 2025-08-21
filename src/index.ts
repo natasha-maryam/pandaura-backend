@@ -10,7 +10,9 @@ import projectVersionsRoutes from "./routes/project_versions_new";
 import tagImportRoutes from './routes/tagImport';
 import http from "http";
 import { DatabaseManager } from "./db/database-manager";
-// import { TagSyncService } from './services/tagSyncService';  // Disabled temporarily
+// Import and initialize TagSyncService
+import { TagSyncService } from './services/tagSyncService';
+import { setTagSyncService } from './services/tagSyncSingleton';
 import { WebSocketServer } from "ws";
 require('dotenv').config()
 
@@ -237,8 +239,11 @@ const wss = new WebSocketServer({
   },
 });
 
+
+
 // Pass WebSocket server to your TagSyncService
-// new TagSyncService(wss);  // Disabled temporarily
+const tagSyncService = new TagSyncService(wss);
+setTagSyncService(tagSyncService);
 
 // Startup function with database checks
 async function startServer() {

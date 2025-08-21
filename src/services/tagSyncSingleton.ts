@@ -1,11 +1,11 @@
-// import { TagSyncService } from './tagSyncService';
+import { TagSyncService } from './tagSyncService';
 
-// let instance: TagSyncService | null = null;
+let instance: TagSyncService | null = null;
 
-// export function setTagSyncService(svc: TagSyncService) {
-//   instance = svc;
-// }
+export function setTagSyncService(svc: TagSyncService) {
+  instance = svc;
+}
 
-// export function getTagSyncService(): TagSyncService | null {
-//   return instance;
-// }
+export function getTagSyncService(): TagSyncService | null {
+  return instance;
+}

@@ -7,6 +7,7 @@ import { validateTagForVendor } from '../utils/vendorFormatters';
 import { exportBeckhoffCsv, exportBeckhoffXml, exportBeckhoffXlsx, importBeckhoffCsv, importBeckhoffXml } from '../utils/beckhoffTagIO';
 import { exportSiemensCsv, exportSiemensXml, exportSiemensXlsx, importSiemensCsv } from '../utils/siemensTagIO';
 import { exportRockwellCsv, exportRockwellL5X, exportRockwellXlsx, importRockwellCsv, importRockwellL5X } from '../utils/rockwellTagIO';
+import { getTagSyncService } from '../services/tagSyncSingleton';
 
 const router = express.Router();
 
@@ -23,7 +24,12 @@ router.get('/', authenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
     const projectId = req.query.projectId as string;
     
+    console.log(`🔍 Tags API: GET request for projectId: ${projectId}`);
+    console.log(`🔍 Tags API: Request query:`, req.query);
+    console.log(`🔍 Tags API: User ID: ${req.user!.userId}`);
+    
     if (!projectId) {
+      console.error(`🔍 Tags API: No projectId provided in query`);
       return res.status(400).json({ error: 'Project ID is required as query parameter' });
     }
     
@@ -31,6 +37,9 @@ router.get('/', authenticateToken, async (req: AuthenticatedRequest, res) => {
     const project = await db('projects')
       .where({ id: parseInt(projectId), user_id: req.user!.userId })
       .first();
+    
+    console.log(`🔍 Tags API: Project lookup result:`, project ? `Found: ${project.project_name}` : 'Not found');
+    
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
     }
@@ -39,9 +48,19 @@ router.get('/', authenticateToken, async (req: AuthenticatedRequest, res) => {
       .where('project_id', projectId)
       .orderBy('name');
 
+    console.log(`🔍 Tags API: Found ${tags.length} tags for project ${projectId}`);
+    console.log(`🔍 Tags API: Tags:`, tags.map(t => ({ 
+      id: t.id, 
+      name: t.name, 
+      scope: t.scope, 
+      data_type: t.data_type,
+      address: t.address,
+      project_id: t.project_id 
+    })));
+
     res.json(tags);
   } catch (error) {
-    console.error('Error fetching tags:', error);
+    console.error('🔍 Tags API: Error fetching tags:', error);
     res.status(500).json({ error: 'Failed to fetch tags' });
   }
 });
@@ -165,6 +184,12 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res) => {
       metadata: { projectId: project_id, tagId: tag.id, tagName: name }
     });
 
+    // Notify real-time subscribers about the new tag
+    const tagSyncService = getTagSyncService();
+    if (tagSyncService) {
+      tagSyncService.notifyProjectTagsUpdated(parseInt(project_id));
+    }
+
     res.status(201).json({
       message: 'Tag created successfully',
       tag
@@ -270,6 +295,12 @@ router.put('/:tagId', authenticateToken, async (req: AuthenticatedRequest, res) 
       metadata: { tagId, updates }
     });
 
+    // Notify real-time subscribers about the updated tag
+    const tagSyncService = getTagSyncService();
+    if (tagSyncService) {
+      tagSyncService.notifyProjectTagsUpdated(updatedTag.project_id);
+    }
+
     res.json({
       message: 'Tag updated successfully',
       tag: updatedTag
@@ -293,6 +324,15 @@ router.delete('/:tagId', authenticateToken, async (req: AuthenticatedRequest, re
       return res.status(400).json({ error: 'Invalid tag ID' });
     }
 
+    // Get tag info before deletion for audit and notification
+    const tagToDelete = await db('tags')
+      .where('id', tagId)
+      .first();
+
+    if (!tagToDelete) {
+      return res.status(404).json({ error: 'Tag not found' });
+    }
+
     const deletedRows = await db('tags')
       .where('id', tagId)
       .del();
@@ -304,11 +344,17 @@ router.delete('/:tagId', authenticateToken, async (req: AuthenticatedRequest, re
     // Log audit event
     await logAuditEvent({
       userId: req.user!.userId,
-      action: `Deleted tag with ID: ${tagId}`,
+      action: `Deleted tag: ${tagToDelete.name}`,
       ip: req.ip,
       userAgent: req.get('User-Agent'),
-      metadata: { tagId }
+      metadata: { tagId, tagName: tagToDelete.name, projectId: tagToDelete.project_id }
     });
+
+    // Notify real-time subscribers about the deleted tag
+    const tagSyncService = getTagSyncService();
+    if (tagSyncService) {
+      tagSyncService.notifyProjectTagsUpdated(tagToDelete.project_id);
+    }
 
     res.json({ success: true, message: 'Tag deleted successfully' });
   } catch (error: any) {

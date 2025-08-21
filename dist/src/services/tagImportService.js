@@ -46,11 +46,14 @@ const vendorFormatters_1 = require("../utils/vendorFormatters");
 const knex_1 = __importDefault(require("../db/knex"));
 function validateTagRow(tag, vendor) {
     const errors = [];
-    if (!tag.name) {
-        errors.push('Missing tag name');
+    if (!tag.name || (typeof tag.name === 'string' && tag.name.trim() === '')) {
+        errors.push('Tag name is required');
     }
-    if (!tag.data_type) {
-        errors.push('Missing data type');
+    // For Siemens, allow empty data types since we can infer them
+    if (vendor !== 'siemens') {
+        if (!tag.data_type || (typeof tag.data_type === 'string' && tag.data_type.trim() === '')) {
+            errors.push('Data type is required');
+        }
     }
     // Vendor-specific address format validation — use the central helper so imports match UI validation
     if (tag.address) {
@@ -143,25 +146,59 @@ class SiemensTagImporter extends TagImporter {
         }
         else {
             const content = this.file.buffer.toString('utf8');
+            // Auto-detect delimiter by checking the first line
+            const firstLine = content.split('\n')[0];
+            const delimiter = firstLine.includes(';') ? ';' : ',';
             records = (0, sync_1.parse)(content, {
                 columns: true,
-                skip_empty_lines: true
+                skip_empty_lines: true,
+                delimiter: delimiter
             });
         }
-        return records.map((record) => ({
-            project_id: this.projectId,
-            user_id: '', // Will be set from authenticated user
-            name: record['Name'] || record['name'] || record.Name || record.nameText,
-            type: this.mapDataTypeToType(record['Data Type'] || record['DataType'] || record.DataType || record.data_type),
-            data_type: record['Data Type'] || record['DataType'] || record.DataType || record.data_type || '',
-            scope: 'global',
-            description: record['Comment'] || '',
-            address: record['Address'] || record['Address'] || record.address || '',
-            default_value: record['Initial Value'] || record['InitialValue'] || record.InitialValue || '',
-            vendor: 'siemens',
-            tag_type: 'memory',
-            is_ai_generated: false
-        }));
+        return records.map((record) => {
+            const rawDataType = record['Data Type'] || record['DataType'] || record.DataType || record.data_type || '';
+            const initialValue = record['Initial Value'] || record['InitialValue'] || record.InitialValue || '';
+            const address = record['Address'] || record['address'] || '';
+            // Infer data type if missing
+            let finalDataType = rawDataType;
+            if (!rawDataType || rawDataType.trim() === '') {
+                // Try to infer from initial value
+                if (initialValue.toLowerCase() === 'true' || initialValue.toLowerCase() === 'false' ||
+                    initialValue.toLowerCase() === 'falsse' || initialValue === '1' || initialValue === '0') {
+                    finalDataType = 'BOOL';
+                }
+                else if (!isNaN(Number(initialValue)) && !initialValue.includes('.')) {
+                    finalDataType = 'DINT';
+                }
+                else if (!isNaN(Number(initialValue)) && initialValue.includes('.')) {
+                    finalDataType = 'REAL';
+                }
+                else {
+                    // Default based on address
+                    const addr = address.toLowerCase();
+                    if (addr.startsWith('i') || addr.startsWith('q') || addr.startsWith('e') || addr.startsWith('a')) {
+                        finalDataType = 'BOOL';
+                    }
+                    else {
+                        finalDataType = 'DINT';
+                    }
+                }
+            }
+            return {
+                project_id: this.projectId,
+                user_id: '', // Will be set from authenticated user
+                name: record['Name'] || record['name'] || record.Name || record.nameText,
+                type: this.mapDataTypeToType(finalDataType),
+                data_type: finalDataType,
+                scope: 'global',
+                description: record['Comment'] || '',
+                address: address,
+                default_value: initialValue,
+                vendor: 'siemens',
+                tag_type: 'memory',
+                is_ai_generated: false
+            };
+        });
     }
     validateTags(tags) {
         return tags.map((tag, index) => {

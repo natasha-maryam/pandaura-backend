@@ -259,7 +259,7 @@ router.post('/:projectId/autosave', authMiddleware_1.authenticateToken, async (r
             await (0, knex_1.default)('project_autosave')
                 .where({ project_id: projectId, user_id: req.user.userId })
                 .update({
-                data: JSON.stringify(state),
+                state: JSON.stringify(state),
                 updated_at: new Date().toISOString()
             });
         }
@@ -268,7 +268,7 @@ router.post('/:projectId/autosave', authMiddleware_1.authenticateToken, async (r
                 .insert({
                 project_id: projectId,
                 user_id: req.user.userId,
-                data: JSON.stringify(state),
+                state: JSON.stringify(state),
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
             });
@@ -278,6 +278,65 @@ router.post('/:projectId/autosave', authMiddleware_1.authenticateToken, async (r
     catch (error) {
         console.error('Error saving autosave state:', error);
         res.status(500).json({ error: 'Failed to save autosave state' });
+    }
+});
+// Update Autosave State (PUT endpoint for compatibility)
+router.put('/:projectId/autosave', authMiddleware_1.authenticateToken, async (req, res) => {
+    try {
+        const projectId = parseInt(req.params.projectId);
+        if (isNaN(projectId)) {
+            return res.status(400).json({ error: 'Invalid project ID' });
+        }
+        const { autosaveState, state } = req.body;
+        const stateData = autosaveState || state; // Support both field names
+        if (!stateData) {
+            return res.status(400).json({ error: 'autosaveState or state is required' });
+        }
+        // Verify project exists and user owns it
+        const project = await (0, knex_1.default)('projects')
+            .where({ id: projectId, user_id: req.user.userId })
+            .first();
+        if (!project) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+        // Save or update autosave
+        const existingAutosave = await (0, knex_1.default)('project_autosave')
+            .where({ project_id: projectId, user_id: req.user.userId })
+            .first();
+        if (existingAutosave) {
+            await (0, knex_1.default)('project_autosave')
+                .where({ project_id: projectId, user_id: req.user.userId })
+                .update({
+                state: JSON.stringify(stateData),
+                updated_at: new Date().toISOString()
+            });
+        }
+        else {
+            await (0, knex_1.default)('project_autosave')
+                .insert({
+                project_id: projectId,
+                user_id: req.user.userId,
+                state: JSON.stringify(stateData),
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            });
+        }
+        // Log audit event
+        await (0, auditLogger_1.logAuditEvent)({
+            userId: req.user.userId,
+            action: `Updated autosave state for project ${project.project_name}`,
+            ip: req.ip,
+            userAgent: req.get('User-Agent'),
+            metadata: { projectId, hasEditorCode: !!stateData.editorCode }
+        });
+        res.json({
+            message: 'Autosave state updated successfully',
+            updatedAt: new Date().toISOString()
+        });
+    }
+    catch (error) {
+        console.error('Error updating autosave state:', error);
+        res.status(500).json({ error: 'Failed to update autosave state' });
     }
 });
 // Get Autosave State

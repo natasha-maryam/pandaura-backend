@@ -1,10 +1,8 @@
 // Real-time WebSocket service for tag synchronization
 import { WebSocketServer, WebSocket } from 'ws';
 import jwt from 'jsonwebtoken';
-import { Tag, CreateTagData } from '../db/tables/tags';
-import { Project } from '../db/tables/projects';
 import { parseSTVariablesDetailed } from '../utils/stParser';
-import { formatTagForVendor } from '../utils/vendorFormatters';
+import { formatTagForVendor, validateTagForVendor } from '../utils/vendorFormatters';
 import db from '../db/knex';
 
 interface AuthenticatedWebSocket extends WebSocket {
@@ -182,25 +180,33 @@ export class TagSyncService {
       return;
     }
 
+    console.log(`🔍 DEBUG: Client subscribing to project ${message.projectId}`);
+    console.log(`🔍 DEBUG: Client user ID: ${ws.user?.userId || 'unknown'}`);
+
     ws.projectId = message.projectId;
 
     if (!this.clients.has(message.projectId)) {
       this.clients.set(message.projectId, new Set());
+      console.log(`🔍 DEBUG: Created new client set for project ${message.projectId}`);
     }
     
     this.clients.get(message.projectId)!.add(ws);
+    console.log(`🔍 DEBUG: Added client to project ${message.projectId}, total clients: ${this.clients.get(message.projectId)!.size}`);
+    console.log(`🔍 DEBUG: All subscribed projects:`, Array.from(this.clients.keys()));
 
     // Send current tags for the project
     try {
-      const tags = TagsTable.getTags({ 
-        project_id: parseInt(message.projectId),
-        page_size: 1000
-      });
+      const tags = await db('tags')
+        .where('project_id', parseInt(message.projectId))
+        .orderBy('name');
+      
+      console.log(`🔍 DEBUG: Sending ${tags.length} existing tags to new subscriber`);
+      
       this.sendResponse(ws, {
         type: 'tags_updated',
         success: true,
         projectId: message.projectId,
-        tags: tags.tags,
+        tags: tags,
         timestamp: new Date().toISOString()
       });
     } catch (error) {
@@ -275,9 +281,11 @@ export class TagSyncService {
     const startTime = Date.now();
 
     try {
-      // Get project details to determine vendor
+      // Get project details to determine vendor using Knex
       const projectId = parseInt(message.projectId);
-      const project = ProjectsTable.getProjectById(projectId, ws.user!.userId);
+      const project = await db('projects')
+        .where({ id: projectId, user_id: ws.user!.userId })
+        .first();
 
       if (!project) {
         console.error(`❌ Project ${projectId} not found for user ${ws.user!.userId}`);
@@ -315,21 +323,23 @@ export class TagSyncService {
       await this.upsertTagsInDB(message.projectId, formattedTags, ws.user!.userId);
       console.log(`💾 Upserted ${formattedTags.length} tags to database`);
 
-      // Fetch updated tags
-      const updatedTags = TagsTable.getTags({
-        project_id: parseInt(message.projectId),
-        page_size: 1000
-      });
+      // Fetch updated tags using Knex
+      const updatedTags = await db('tags')
+        .where('project_id', parseInt(message.projectId))
+        .orderBy('name');
 
       const duration = Date.now() - startTime;
       console.log(`✅ Tag sync completed in ${duration}ms for project ${message.projectId}`);
 
+      console.log(`🔍 DEBUG: About to broadcast tags_updated to project ${message.projectId}`);
+      console.log(`🔍 DEBUG: Broadcasting ${updatedTags.length} tags to all subscribers`);
+      
       // Broadcast to all subscribers of this project
       this.broadcastToProject(message.projectId, {
         type: 'tags_updated',
         success: true,
         projectId: message.projectId,
-        tags: updatedTags.tags,
+        tags: updatedTags,
         parsedCount: parsedTags.length,
         syncId,
         timestamp: new Date().toISOString()
@@ -343,47 +353,56 @@ export class TagSyncService {
   }
 
   /**
-   * Upsert tags in database with transaction
+   * Validate project exists and user has access
+   */
+  private async validateProjectAccess(projectId: string, userId: string): Promise<boolean> {
+    try {
+      const projectIdNum = parseInt(projectId);
+      
+      // Check if project exists and user has access to it
+      const project = await db('projects')
+        .where({ id: projectIdNum, user_id: userId })
+        .first();
+        
+      if (!project) {
+        console.log(`❌ Project ${projectIdNum} not found or user ${userId} doesn't have access`);
+        return false;
+      }
+      
+      console.log(`✅ Validated access to project ${projectIdNum} for user ${userId}`);
+      return true;
+    } catch (error) {
+      console.error('Error validating project access:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Enhanced upsert tags in database with real-time validation and intelligent updates
    */
   private async upsertTagsInDB(projectId: string, tags: any[], userId: string) {
-    console.log(`🔍 Upserting tags for project ${projectId}, user ${userId}`);
+    console.log(`🔍 Starting intelligent tag upsert for project ${projectId}, user ${userId}`);
+    console.log(`🔍 Processing ${tags.length} tags from Logic Studio`);
 
-    // Check if project and user exist
-    const projectIdNum = parseInt(projectId);
-    console.log(`🔍 Checking if project ${projectIdNum} and user ${userId} exist in database...`);
-
-    // For now, let's create the project if it doesn't exist
-    try {
-      const db = require('../db/index').default;
-
-      // Check if project exists
-      const projectCheck = db.prepare('SELECT id FROM projects WHERE id = ?').get(projectIdNum);
-      if (!projectCheck) {
-        console.log(`🔧 Project ${projectIdNum} doesn't exist, creating it...`);
-        db.prepare(`
-          INSERT INTO projects (id, name, description, created_at, updated_at)
-          VALUES (?, ?, ?, datetime('now'), datetime('now'))
-        `).run(projectIdNum, `Project ${projectIdNum}`, `Auto-created project for Logic Studio`);
-        console.log(`✅ Created project ${projectIdNum}`);
-      }
-
-      // Check if user exists
-      const userCheck = db.prepare('SELECT id FROM users WHERE id = ?').get(userId);
-      if (!userCheck) {
-        console.log(`🔧 User ${userId} doesn't exist, creating it...`);
-        db.prepare(`
-          INSERT INTO users (id, username, email, role, created_at, updated_at)
-          VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
-        `).run(userId, `User-${userId.substring(0, 8)}`, `${userId}@example.com`, 'Admin');
-        console.log(`✅ Created user ${userId}`);
-      }
-    } catch (error) {
-      console.error('Error checking/creating project and user:', error);
+    // Validate project access first
+    if (!(await this.validateProjectAccess(projectId, userId))) {
+      throw new Error(`Access denied to project ${projectId} for user ${userId}`);
     }
 
-    // Fetch all existing tags for the project once
-    const existingTagsResult = TagsTable.getTags({ project_id: projectIdNum, page_size: 1000 });
-    const existingTags = existingTagsResult.tags;
+    const projectIdNum = parseInt(projectId);
+
+    // Get project vendor for new tags
+    const project = await db('projects')
+      .where({ id: projectIdNum, user_id: userId })
+      .first();
+    
+    const projectVendor = project?.target_plc_vendor || 'rockwell';
+    console.log(`🔍 Project vendor for new tags: ${projectVendor}`);
+
+    // Fetch all existing tags for the project once using Knex
+    const existingTags = await db('tags')
+      .where('project_id', projectIdNum)
+      .orderBy('name');
 
     for (const tag of tags) {
       try {
@@ -399,36 +418,34 @@ export class TagSyncService {
           const rawScopeForUpdate = tag.Scope || tag.scope || 'local';
           const normalizedScopeForUpdate = rawScopeForUpdate.toLowerCase();
 
-          const rawVendorForUpdate = tag.Vendor || tag.vendor || 'rockwell';
-          const normalizedVendorForUpdate = rawVendorForUpdate.toLowerCase();
-
           console.log(`🔍 TagSync Update: Raw data type: "${rawDataTypeForUpdate}" → Normalized: "${normalizedDataTypeForUpdate}"`);
           console.log(`🔍 TagSync Update: Raw scope: "${rawScopeForUpdate}" → Normalized: "${normalizedScopeForUpdate}"`);
-          console.log(`🔍 TagSync Update: Raw vendor: "${rawVendorForUpdate}" → Normalized: "${normalizedVendorForUpdate}"`);
+          console.log(`🔍 TagSync Update: Preserving existing vendor: "${existingTag.vendor}"`);
 
-          TagsTable.update(existingTag.id, {
-            type: normalizedDataTypeForUpdate,
-            data_type: normalizedDataTypeForUpdate,
-            address: tag.Address || tag.address,
-            default_value: tag.DefaultValue || tag.defaultValue,
-            vendor: normalizedVendorForUpdate,
-            scope: normalizedScopeForUpdate,
-            description: tag.Description || tag.description || ''
-          });
+          // Update existing tag using Knex - but preserve the existing vendor
+          await db('tags')
+            .where('id', existingTag.id)
+            .update({
+              type: normalizedDataTypeForUpdate,
+              data_type: normalizedDataTypeForUpdate,
+              address: tag.Address || tag.address,
+              default_value: tag.DefaultValue || tag.defaultValue,
+              // vendor: normalizedVendorForUpdate, // REMOVED: Don't change vendor of existing tags
+              scope: normalizedScopeForUpdate,
+              description: tag.Description || tag.description || '',
+              updated_at: new Date().toISOString()
+            });
         } else {
-          // Create new tag with normalized values
+          // Create new tag with normalized values and project vendor
           const rawDataType = tag.DataType || tag.dataType;
           const normalizedDataType = rawDataType?.toUpperCase() || 'BOOL';
 
           const rawScope = tag.Scope || tag.scope || 'local';
           const normalizedScope = rawScope.toLowerCase();
 
-          const rawVendor = tag.Vendor || tag.vendor || 'rockwell';
-          const normalizedVendor = rawVendor.toLowerCase();
-
           console.log(`🔍 TagSync Create: Raw data type: "${rawDataType}" → Normalized: "${normalizedDataType}"`);
           console.log(`🔍 TagSync Create: Raw scope: "${rawScope}" → Normalized: "${normalizedScope}"`);
-          console.log(`🔍 TagSync Create: Raw vendor: "${rawVendor}" → Normalized: "${normalizedVendor}"`);
+          console.log(`🔍 TagSync Create: Using project vendor: "${projectVendor}"`);
 
           const tagData = {
             project_id: parseInt(projectId),
@@ -439,15 +456,19 @@ export class TagSyncService {
             data_type: normalizedDataType,
             address: tag.Address || tag.address,
             default_value: tag.DefaultValue || tag.defaultValue,
-            vendor: normalizedVendor,
+            vendor: projectVendor, // Use project vendor for new tags
             scope: normalizedScope,
             tag_type: 'memory' as const, // default, adjust as needed
-            is_ai_generated: false
+            is_ai_generated: false,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
           };
 
           console.log(`🔍 Creating tag with data:`, JSON.stringify(tagData, null, 2));
           console.log(`🔍 Data type being inserted: "${tagData.data_type}" (length: ${tagData.data_type?.length})`);
-          TagsTable.create(tagData);
+          
+          // Create new tag using Knex
+          await db('tags').insert(tagData);
         }
       } catch (error) {
         console.error(`Error upserting tag ${tag.Name || tag.TagName || tag.name}:`, error);
@@ -461,6 +482,7 @@ export class TagSyncService {
    */
   private handleDisconnection(ws: AuthenticatedWebSocket) {
     console.log(`🔌 WebSocket client disconnected: ${ws.user?.username || 'unknown'}`);
+    console.log(`🔍 DEBUG: Client was subscribed to project: ${ws.projectId || 'none'}`);
 
     // Clear any pending debounce timer
     if (ws.debounceTimer) {
@@ -473,6 +495,7 @@ export class TagSyncService {
       const projectClients = this.clients.get(ws.projectId);
       if (projectClients) {
         projectClients.delete(ws);
+        console.log(`🔍 DEBUG: Removed client from project ${ws.projectId}, remaining clients: ${projectClients.size}`);
         if (projectClients.size === 0) {
           this.clients.delete(ws.projectId);
           console.log(`📂 No more clients for project ${ws.projectId}, removed from active projects`);
@@ -508,13 +531,32 @@ export class TagSyncService {
    */
   private broadcastToProject(projectId: string, response: TagSyncResponse) {
     const projectClients = this.clients.get(projectId);
+    
+    console.log(`🔍 DEBUG: Broadcasting to project ${projectId}`);
+    console.log(`🔍 DEBUG: Subscribed clients count: ${projectClients?.size || 0}`);
+    console.log(`🔍 DEBUG: Message type: ${response.type}`);
+    console.log(`🔍 DEBUG: All project subscriptions:`, Array.from(this.clients.keys()));
+    
     if (projectClients) {
       const message = JSON.stringify(response);
+      console.log(`📡 Broadcasting to ${projectClients.size} clients for project ${projectId}`);
+      let sentCount = 0;
       projectClients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
-          client.send(message);
+          try {
+            client.send(message);
+            sentCount++;
+            console.log(`✅ Message sent to client (${sentCount}/${projectClients.size})`);
+          } catch (error) {
+            console.error(`❌ Failed to send message to client:`, error);
+          }
+        } else {
+          console.log(`⚠️ Client WebSocket not open (state: ${client.readyState})`);
         }
       });
+      console.log(`📡 Successfully broadcast to ${sentCount}/${projectClients.size} clients`);
+    } else {
+      console.log(`📡 No clients subscribed to project ${projectId}`);
     }
   }
 
@@ -555,14 +597,17 @@ export class TagSyncService {
    * Public helper to notify subscribers that a project's tags were updated
    * Useful for non-WS flows like file imports to trigger real-time reload
    */
-  public notifyProjectTagsUpdated(projectId: number) {
+  public async notifyProjectTagsUpdated(projectId: number) {
     try {
-      const tagsResult = TagsTable.getTags({ project_id: projectId, page_size: 1000 });
+      const tags = await db('tags')
+        .where('project_id', projectId)
+        .orderBy('name');
+        
       const response = {
         type: 'tags_updated' as const,
         success: true,
         projectId: String(projectId),
-        tags: tagsResult.tags,
+        tags: tags,
         timestamp: new Date().toISOString(),
       };
       this.broadcastToProject(String(projectId), response);
