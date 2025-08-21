@@ -27,6 +27,10 @@ export interface TokenPayload {
 }
 
 export function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+
+   // ✅ Let preflight pass through
+  if (req.method === 'OPTIONS') return next();
+
   const authHeader = req.headers['authorization'];
   const headerToken = authHeader && authHeader.split(' ')[1];
   const cookieToken = req.cookies?.authToken;
@@ -82,6 +86,7 @@ export function authenticateToken(req: AuthenticatedRequest, res: Response, next
 }
 
 export function generateToken(payload: TokenPayload, expiresIn: string = '8h'): string {
+  
   // Ensure we only include necessary fields in the token
   const tokenPayload: TokenPayload = {
     userId: payload.userId,
@@ -98,6 +103,10 @@ export async function authorizeProjectAccess(
   res: Response,
   next: NextFunction
 ) {
+
+   // ✅ Let preflight pass through
+  if (req.method === 'OPTIONS') return next();
+
   try {
     const projectId = parseInt(req.params.projectId, 10);
     if (isNaN(projectId)) {
@@ -174,6 +183,9 @@ export function requireAdmin(req: AuthenticatedRequest, res: Response, next: Nex
 
 // Optional middleware for organization members
 export async function requireOrgMember(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+   // ✅ Let preflight pass through
+  if (req.method === 'OPTIONS') return next();
+  
   try {
     const userId = req.user?.userId;
     const orgId = req.params.orgId || req.user?.orgId;

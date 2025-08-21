@@ -18,7 +18,6 @@ const app = express();
 const port = process.env.PORT || 5000;
 const server = http.createServer(app);
 
-// Configure CORS to handle multiple origins
 const allowedOrigins = [
   "https://pandaura.vercel.app", // your frontend
   "http://localhost:5173",       // local dev
@@ -27,6 +26,8 @@ const allowedOrigins = [
 
 const corsOptions: CorsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    // ✅ Always allow OPTIONS preflight without origin check
+    // Browser may send OPTIONS with no Origin sometimes
     if (!origin) return callback(null, true);
 
     if (
@@ -44,9 +45,21 @@ const corsOptions: CorsOptions = {
   allowedHeaders: ["Content-Type", "Authorization"],
 };
 
-// Apply before routes
+// ✅ Preflight handler first (before routes/middleware)
+app.use((req, res, next) => {
+  if (req.method === "OPTIONS") {
+    res.header("Access-Control-Allow-Origin", req.headers.origin || "");
+    res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.header("Access-Control-Allow-Credentials", "true");
+    return res.sendStatus(204);
+  }
+  next();
+});
+
+// Apply cors for normal requests
 app.use(cors(corsOptions));
-app.options("*", cors(corsOptions));
+
 
 // Security middleware
 app.use(helmet());
