@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "rimraf dist && tsc",
     "start": "node dist/src/index.js",
     "dev": "concurrently \"npx tsc --watch\" \"nodemon dist/index.js\"",
     "vercel-build": "npx tsc",
