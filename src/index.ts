@@ -17,7 +17,7 @@ import { WebSocketServer } from "ws";
 require('dotenv').config()
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const port = process.env.PORT || 5000;
 const server = http.createServer(app);
 
 const allowedOrigins = ["*"];
@@ -256,15 +256,15 @@ async function startServer() {
       );
     }
     // Start the server
-    server.listen({port:PORT, host: "0.0.0.0"}, () => {
-      console.log(`✅ Server is running on http://localhost:${PORT}`);
+    server.listen({port, host: "0.0.0.0"}, () => {
+      console.log(`✅ Server is running on http://localhost:${port}`);
       console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
       console.log(
         `🖥️  Frontend URL: ${
           process.env.FRONTEND_URL || "http://localhost:5173"
         }`
       );
-      console.log(`📊 Health check: http://localhost:${PORT}/api/v1/health`);
+      console.log(`📊 Health check: http://localhost:${port}/api/v1/health`);
       console.log("🎉 Pandaura Backend is ready to serve requests!");
     });
   } catch (error) {
