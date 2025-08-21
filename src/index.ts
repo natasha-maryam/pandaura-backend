@@ -20,13 +20,7 @@ const app = express();
 const port = process.env.PORT || 5000;
 const server = http.createServer(app);
 
-const allowedOrigins = [
-  "https://pandaura.vercel.app", // your frontend
-  "http://localhost:5173",       // local dev (vite default)
-  "http://localhost:5174",       // local dev (vite fallback)
-  "http://127.0.0.1:5173",
-  "http://127.0.0.1:5174"
-];
+const allowedOrigins = ["*"];
 
 const corsOptions: CorsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
