@@ -1,5 +1,5 @@
 import express from "express";
-import cors from "cors";
+import cors, { CorsOptions } from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import authRoutes from "./routes/auth-new";
@@ -18,9 +18,6 @@ const app = express();
 const port = process.env.PORT || 5000;
 const server = http.createServer(app);
 
-// Security middleware
-app.use(helmet());
-
 // Configure CORS to handle multiple origins
 const allowedOrigins = [
   "https://pandaura.vercel.app", // your frontend
@@ -28,31 +25,31 @@ const allowedOrigins = [
   "http://127.0.0.1:3000"
 ];
 
+const corsOptions: CorsOptions = {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    if (!origin) return callback(null, true);
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
+    if (
+      allowedOrigins.includes(origin) ||
+      origin.endsWith(".vercel.app")
+    ) {
+      return callback(null, true);
+    }
 
-      const hostname = new URL(origin).hostname;
+    console.log("❌ CORS blocked:", origin);
+    return callback(new Error("Not allowed by CORS"));
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
 
-      if (
-        allowedOrigins.includes(origin) ||
-        hostname.endsWith(".vercel.app")
-      ) {
-        return callback(null, true);
-      }
+// Apply before routes
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
-      console.log("❌ CORS blocked origin:", origin);
-      callback(new Error("Not allowed by CORS"));
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["*"],
-  })
-);
-
-app.options("*", cors());
+// Security middleware
+app.use(helmet());
 // Body parsing middleware
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
