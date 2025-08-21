@@ -159,15 +159,29 @@ function validateAndMapRockwellRow(row, projectId, userId) {
     if (!row.name) {
         errors.push('Missing tag name');
     }
-    if (!row.data_type) {
-        errors.push('Missing data type');
-    }
-    else {
-        const dtRaw = row.data_type.trim().toUpperCase();
-        const dtNorm = DATA_TYPE_NORMALIZE[dtRaw];
-        if (!dtNorm || !ROCKWELL_TYPES.has(dtNorm)) {
-            errors.push(`Unsupported Rockwell data type: ${row.data_type}`);
+    // Handle missing data type by providing a default
+    let dataType = row.data_type?.trim();
+    if (!dataType) {
+        // Infer data type from address if possible, otherwise use DINT as default
+        if (row.address) {
+            const addr = row.address.trim();
+            if (addr.startsWith('I:') || addr.startsWith('O:')) {
+                dataType = 'BOOL'; // I/O points are typically boolean
+            }
+            else {
+                dataType = 'DINT'; // Default for other addresses
+            }
         }
+        else {
+            dataType = 'DINT'; // Default data type for Rockwell
+        }
+        console.log(`⚠️ Missing data type for tag '${row.name}', using default: ${dataType}`);
+    }
+    // Validate the data type (either original or default)
+    const dtRaw = dataType.toUpperCase();
+    const dtNorm = DATA_TYPE_NORMALIZE[dtRaw];
+    if (!dtNorm || !ROCKWELL_TYPES.has(dtNorm)) {
+        errors.push(`Unsupported Rockwell data type: ${dataType}`);
     }
     // Rockwell address validation: supports I:x/y, O:x/y, Nxx:y, Fxx:y, and symbolic names
     if (row.address) {
@@ -191,15 +205,16 @@ function validateAndMapRockwellRow(row, projectId, userId) {
     if (errors.length > 0) {
         return { errors, mapped: null };
     }
-    const dataType = row.data_type.trim().toUpperCase();
-    const standardType = ROCKWELL_TO_STANDARD_TYPE[dataType] || 'STRING';
+    // Use the determined data type (either from row or default)
+    const finalDataType = dataType.toUpperCase();
+    const standardType = ROCKWELL_TO_STANDARD_TYPE[finalDataType] || 'STRING';
     const mapped = {
         project_id: projectId,
         user_id: userId,
         name: row.name,
         description: row.description || '',
         type: standardType,
-        data_type: dataType,
+        data_type: finalDataType,
         address: row.address || '',
         default_value: row.default_value || '',
         vendor: 'rockwell',

@@ -22,11 +22,10 @@ function validateAndMapSiemensRow(row: ParsedSiemensRow, projectId: number, user
   const errors: string[] = [];
   
   // Validate required fields
-  if (!row.Name) errors.push('Tag name is required');
-  if (!row.DataType) errors.push('Data type is required');
+  if (!row.Name || row.Name.trim() === '') errors.push('Tag name is required');
   
   // Validate name format (Siemens specific)
-  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(row.Name)) {
+  if (row.Name && !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(row.Name.trim())) {
     errors.push('Invalid tag name format for Siemens. Must start with letter or underscore, followed by letters, numbers, or underscores');
   }
 
@@ -39,27 +38,59 @@ function validateAndMapSiemensRow(row: ParsedSiemensRow, projectId: number, user
     'STRING': 'STRING',
     'WORD': 'WORD',
     'DWORD': 'DWORD',
-  'TIME': 'DINT'
+    'TIME': 'DINT'
   };
 
-  const rawDT = row.DataType || row.DataType === '' ? row.DataType : undefined;
-  const standardType = rawDT ? dataTypeMap[rawDT.toUpperCase()] : undefined;
-  if (!standardType) {
-    errors.push(`Unsupported Siemens data type: ${row.DataType || 'undefined'}`);
+  // Try to determine data type
+  let standardType: string | undefined;
+  let finalDataType: string;
+
+  if (row.DataType && row.DataType.trim() !== '') {
+    // Use provided data type
+    finalDataType = row.DataType.trim();
+    standardType = dataTypeMap[finalDataType.toUpperCase()];
+    if (!standardType) {
+      errors.push(`Unsupported Siemens data type: ${finalDataType}`);
+    }
+  } else {
+    // Try to infer data type from initial value
+    const initialValue = row.InitialValue?.trim() || '';
+    
+    if (initialValue.toLowerCase() === 'true' || initialValue.toLowerCase() === 'false' || 
+        initialValue.toLowerCase() === 'falsse' || initialValue === '1' || initialValue === '0') {
+      finalDataType = 'BOOL';
+      standardType = 'BOOL';
+    } else if (!isNaN(Number(initialValue)) && !initialValue.includes('.')) {
+      finalDataType = 'DINT';
+      standardType = 'DINT';
+    } else if (!isNaN(Number(initialValue)) && initialValue.includes('.')) {
+      finalDataType = 'REAL';
+      standardType = 'REAL';
+    } else {
+      // Default to DINT for memory tags, BOOL for I/O
+      const address = row.Address?.toLowerCase() || '';
+      if (address.startsWith('i') || address.startsWith('q') || address.startsWith('e') || address.startsWith('a')) {
+        finalDataType = 'BOOL';
+        standardType = 'BOOL';
+      } else {
+        finalDataType = 'DINT';
+        standardType = 'DINT';
+      }
+    }
   }
 
   if (errors.length > 0) {
     return { errors };
   }
 
-  // Map to internal tag format
+  // Map to internal tag format (only if validation passed)
   const mapped: CreateTagData = {
     project_id: projectId,
     user_id: userId,
-    name: row.Name,
+    name: row.Name.trim(),
     description: row.Comment || '',
-  type: standardType as 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'STRING',
-    data_type: row.DataType,
+    type: standardType as 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'STRING',
+    data_type: finalDataType,
     address: row.Address || '',
     default_value: row.InitialValue,
     vendor: 'siemens',
@@ -90,8 +121,14 @@ export async function importSiemensCsv(
 ): Promise<{ success: boolean; inserted?: number; errors?: any[] }> {
   return new Promise((resolve, reject) => {
     const rows: ParsedSiemensRow[] = [];
+    
+    // Auto-detect delimiter by checking the first line
+    const content = buffer.toString('utf8');
+    const firstLine = content.split('\n')[0];
+    const delimiter = firstLine.includes(';') ? ';' : ',';
+    
     const parser = parse({
-      delimiter: ',',
+      delimiter: delimiter,
       columns: true,
       skip_empty_lines: true
     });

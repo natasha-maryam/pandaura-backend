@@ -208,7 +208,11 @@ function validateAndMapBeckhoffRow(row) {
         mapped.standardType = BECKHOFF_TO_STANDARD_TYPE[canonical] || 'DINT';
     }
     else {
-        errors.push('Missing data type');
+        // Provide default data type instead of rejecting
+        const defaultType = 'BOOL'; // Default for Beckhoff
+        console.log(`⚠️ Missing data type for tag '${mapped.name}', using default: ${defaultType}`);
+        mapped.dataType = defaultType;
+        mapped.standardType = BECKHOFF_TO_STANDARD_TYPE[defaultType] || 'BOOL';
     }
     // Set scope based on address or default to global
     if (mapped.address) {
@@ -411,11 +415,12 @@ async function importBeckhoffXml(buffer, projectId, userId) {
                 errors.push({ row: i + 1, errors: ['Missing variable name'], raw: v });
                 continue;
             }
+            // Handle missing data type with default
+            const finalDataType = dataTypeRaw || 'BOOL';
             if (!dataTypeRaw) {
-                errors.push({ row: i + 1, errors: ['Missing data type'], raw: v });
-                continue;
+                console.log(`⚠️ Missing data type for tag '${name}' in XML, using default: ${finalDataType}`);
             }
-            const raw = dataTypeRaw.toString().trim();
+            const raw = finalDataType.toString().trim();
             const key = raw.toLowerCase().replace(/\s+/g, '_');
             const canonical = DATA_TYPE_NORMALIZE[key] || raw.toUpperCase();
             // Accept any Beckhoff data type. If known, map to a standard type, otherwise fallback to DINT
