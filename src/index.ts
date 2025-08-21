@@ -17,7 +17,7 @@ import { WebSocketServer } from "ws";
 require('dotenv').config()
 
 const app = express();
-const port = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5000;
 const server = http.createServer(app);
 
 const allowedOrigins = ["*"];
@@ -156,13 +156,17 @@ app.get("/api/v1/ws-test", (req, res) => {
 // console.log(rows)
 
 // Root health check endpoint for Railway
+// app.get("/", (req, res) => {
+//   res.status(200).json({
+//     status: "ok",
+//     service: "Pandaura Backend",
+//     timestamp: new Date().toISOString(),
+//     environment: process.env.NODE_ENV || "development",
+//   });
+// });
+
 app.get("/", (req, res) => {
-  res.status(200).json({
-    status: "ok",
-    service: "Pandaura Backend",
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || "development",
-  });
+  res.send("🚀 Pandaura Backend is running!");
 });
 
 // CORS debug endpoint
@@ -252,15 +256,15 @@ async function startServer() {
       );
     }
     // Start the server
-    server.listen({port, host: "0.0.0.0"}, () => {
-      console.log(`✅ Server is running on http://localhost:${port}`);
+    server.listen({port:PORT, host: "0.0.0.0"}, () => {
+      console.log(`✅ Server is running on http://localhost:${PORT}`);
       console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
       console.log(
         `🖥️  Frontend URL: ${
           process.env.FRONTEND_URL || "http://localhost:5173"
         }`
       );
-      console.log(`📊 Health check: http://localhost:${port}/api/v1/health`);
+      console.log(`📊 Health check: http://localhost:${PORT}/api/v1/health`);
       console.log("🎉 Pandaura Backend is ready to serve requests!");
     });
   } catch (error) {
