@@ -21,31 +21,46 @@ require('dotenv').config();
 const app = (0, express_1.default)();
 const port = process.env.PORT || 5000;
 const server = http_1.default.createServer(app);
-// Security middleware
-app.use((0, helmet_1.default)());
-// Configure CORS to handle multiple origins
 const allowedOrigins = [
     "https://pandaura.vercel.app", // your frontend
-    "http://localhost:5173", // local dev
-    "http://127.0.0.1:3000"
+    "http://localhost:5173", // local dev (vite default)
+    "http://localhost:5174", // local dev (vite fallback)
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174"
 ];
-app.use((0, cors_1.default)({
+const corsOptions = {
     origin: (origin, callback) => {
+        // ✅ Always allow OPTIONS preflight without origin check
+        // Browser may send OPTIONS with no Origin sometimes
         if (!origin)
             return callback(null, true);
-        const hostname = new URL(origin).hostname;
         if (allowedOrigins.includes(origin) ||
-            hostname.endsWith(".vercel.app")) {
+            origin.endsWith(".vercel.app")) {
             return callback(null, true);
         }
-        console.log("❌ CORS blocked origin:", origin);
-        callback(new Error("Not allowed by CORS"));
+        console.log("❌ CORS blocked:", origin);
+        return callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["*"],
-}));
-app.options("*", (0, cors_1.default)());
+    allowedHeaders: ["Content-Type", "Authorization"],
+};
+// ✅ Preflight handler first (before routes/middleware)
+app.use((req, res, next) => {
+    if (req.method === "OPTIONS") {
+        res.header("Access-Control-Allow-Origin", req.headers.origin || "");
+        res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+        res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+        res.header("Access-Control-Allow-Credentials", "true");
+        return res.sendStatus(204);
+    }
+    next();
+});
+// Apply cors for normal requests
+app.use((0, cors_1.default)(corsOptions));
+// Security middleware
+app.use((0, helmet_1.default)());
 // Body parsing middleware
 app.use(express_1.default.json({ limit: "10mb" }));
 app.use(express_1.default.urlencoded({ extended: true }));

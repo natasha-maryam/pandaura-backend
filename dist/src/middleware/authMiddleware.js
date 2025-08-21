@@ -12,6 +12,9 @@ const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const knex_1 = __importDefault(require("../db/knex"));
 const JWT_SECRET = process.env.JWT_SECRET || '69d215b3cc191323c79a3a264f6ad2f194d02486f0001b4ae287b13542fcd2212e39ffda859f71f450edcde3944567db1a694a82155f74c749c2aa4e45fa8c17';
 function authenticateToken(req, res, next) {
+    // ✅ Let preflight pass through
+    if (req.method === 'OPTIONS')
+        return next();
     const authHeader = req.headers['authorization'];
     const headerToken = authHeader && authHeader.split(' ')[1];
     const cookieToken = req.cookies?.authToken;
@@ -71,6 +74,9 @@ function generateToken(payload, expiresIn = '8h') {
     return jsonwebtoken_1.default.sign(tokenPayload, JWT_SECRET, { expiresIn });
 }
 async function authorizeProjectAccess(req, res, next) {
+    // ✅ Let preflight pass through
+    if (req.method === 'OPTIONS')
+        return next();
     try {
         const projectId = parseInt(req.params.projectId, 10);
         if (isNaN(projectId)) {
@@ -138,6 +144,9 @@ function requireAdmin(req, res, next) {
 }
 // Optional middleware for organization members
 async function requireOrgMember(req, res, next) {
+    // ✅ Let preflight pass through
+    if (req.method === 'OPTIONS')
+        return next();
     try {
         const userId = req.user?.userId;
         const orgId = req.params.orgId || req.user?.orgId;

@@ -20,8 +20,7 @@ const server = http.createServer(app);
 
 const allowedOrigins = [
   "https://pandaura.vercel.app", // your frontend
-  "http://localhost:5173",       // local dev
-  "http://127.0.0.1:3000"
+  "http://localhost:5173",       // local dev (vite default)
 ];
 
 const corsOptions: CorsOptions = {
