@@ -14,6 +14,19 @@ exports.validateRockwellAddress = validateRockwellAddress;
 exports.validateSiemensAddress = validateSiemensAddress;
 exports.validateBeckhoffAddress = validateBeckhoffAddress;
 exports.validateAddressForVendor = validateAddressForVendor;
+exports.validateDataTypeForVendor = validateDataTypeForVendor;
+exports.validateRockwellDataType = validateRockwellDataType;
+exports.validateSiemensDataType = validateSiemensDataType;
+exports.validateBeckhoffDataType = validateBeckhoffDataType;
+exports.validateScopeForVendor = validateScopeForVendor;
+exports.validateRockwellScope = validateRockwellScope;
+exports.validateSiemensScope = validateSiemensScope;
+exports.validateBeckhoffScope = validateBeckhoffScope;
+exports.validateTagTypeForVendor = validateTagTypeForVendor;
+exports.validateRockwellTagType = validateRockwellTagType;
+exports.validateSiemensTagType = validateSiemensTagType;
+exports.validateBeckhoffTagType = validateBeckhoffTagType;
+exports.validateTagForVendor = validateTagForVendor;
 // 1. Rockwell Formatter
 /**
  * Format tag for Rockwell PLC systems (Allen-Bradley)
@@ -211,4 +224,130 @@ function validateAddressForVendor(address, vendor) {
         default:
             return false;
     }
+}
+// Data type validation functions
+function validateDataTypeForVendor(dataType, vendor) {
+    switch (vendor.toLowerCase()) {
+        case 'rockwell':
+            return validateRockwellDataType(dataType);
+        case 'siemens':
+            return validateSiemensDataType(dataType);
+        case 'beckhoff':
+            return validateBeckhoffDataType(dataType);
+        default:
+            return false;
+    }
+}
+function validateRockwellDataType(dataType) {
+    const validTypes = [
+        'BOOL', 'SINT', 'INT', 'DINT', 'LINT',
+        'USINT', 'UINT', 'UDINT', 'ULINT',
+        'REAL', 'LREAL', 'STRING', 'TIME'
+    ];
+    return validTypes.includes(dataType.toUpperCase());
+}
+function validateSiemensDataType(dataType) {
+    const validTypes = [
+        'BOOL', 'BYTE', 'WORD', 'DWORD', 'LWORD',
+        'SINT', 'INT', 'DINT', 'LINT',
+        'USINT', 'UINT', 'UDINT', 'ULINT',
+        'REAL', 'LREAL', 'STRING', 'TIME',
+        'S5TIME', 'TIME_OF_DAY', 'DATE'
+    ];
+    return validTypes.includes(dataType.toUpperCase());
+}
+function validateBeckhoffDataType(dataType) {
+    const validTypes = [
+        'BOOL', 'BYTE', 'WORD', 'DWORD', 'LWORD',
+        'SINT', 'INT', 'DINT', 'LINT',
+        'USINT', 'UINT', 'UDINT', 'ULINT',
+        'REAL', 'LREAL', 'STRING', 'TIME'
+    ];
+    // Beckhoff also supports custom types, so we're more permissive
+    // If it's not a standard type, allow it if it follows naming conventions
+    return validTypes.includes(dataType.toUpperCase()) ||
+        /^[A-Z][A-Za-z0-9_]*$/.test(dataType);
+}
+// Scope validation functions
+function validateScopeForVendor(scope, vendor) {
+    switch (vendor.toLowerCase()) {
+        case 'rockwell':
+            return validateRockwellScope(scope);
+        case 'siemens':
+            return validateSiemensScope(scope);
+        case 'beckhoff':
+            return validateBeckhoffScope(scope);
+        default:
+            return false;
+    }
+}
+function validateRockwellScope(scope) {
+    const validScopes = ['global', 'local', 'input', 'output'];
+    return validScopes.includes(scope.toLowerCase());
+}
+function validateSiemensScope(scope) {
+    const validScopes = ['global', 'local', 'input', 'output'];
+    return validScopes.includes(scope.toLowerCase());
+}
+function validateBeckhoffScope(scope) {
+    const validScopes = ['global', 'local', 'input', 'output'];
+    return validScopes.includes(scope.toLowerCase());
+}
+// Tag type validation functions
+function validateTagTypeForVendor(tagType, vendor) {
+    switch (vendor.toLowerCase()) {
+        case 'rockwell':
+            return validateRockwellTagType(tagType);
+        case 'siemens':
+            return validateSiemensTagType(tagType);
+        case 'beckhoff':
+            return validateBeckhoffTagType(tagType);
+        default:
+            return false;
+    }
+}
+function validateRockwellTagType(tagType) {
+    const validTagTypes = ['input', 'output', 'memory'];
+    return validTagTypes.includes(tagType.toLowerCase());
+}
+function validateSiemensTagType(tagType) {
+    const validTagTypes = ['memory', 'input', 'output', 'temp'];
+    return validTagTypes.includes(tagType.toLowerCase());
+}
+function validateBeckhoffTagType(tagType) {
+    const validTagTypes = ['input', 'output', 'memory', 'temp', 'constant'];
+    return validTagTypes.includes(tagType.toLowerCase());
+}
+function validateTagForVendor(tag, vendor) {
+    const errors = [];
+    // Validate name
+    if (!tag.name || tag.name.trim().length === 0) {
+        errors.push('Tag name is required');
+    }
+    else if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(tag.name)) {
+        errors.push('Tag name must start with a letter or underscore and contain only letters, numbers, and underscores');
+    }
+    // Validate address
+    if (!tag.address || tag.address.trim().length === 0) {
+        errors.push('Address is required');
+    }
+    else if (!validateAddressForVendor(tag.address, vendor)) {
+        errors.push(`Invalid address format for ${vendor}`);
+    }
+    // Validate data type
+    if (tag.type && !validateDataTypeForVendor(tag.type, vendor)) {
+        errors.push(`Invalid data type '${tag.type}' for ${vendor}`);
+    }
+    // Validate scope
+    if (!validateScopeForVendor(tag.scope, vendor)) {
+        errors.push(`Invalid scope '${tag.scope}' for ${vendor}`);
+    }
+    // Validate tag type
+    if (!validateTagTypeForVendor(tag.tag_type, vendor)) {
+        errors.push(`Invalid tag type '${tag.tag_type}' for ${vendor}`);
+    }
+    return {
+        isValid: errors.length === 0,
+        errors
+    };
 }

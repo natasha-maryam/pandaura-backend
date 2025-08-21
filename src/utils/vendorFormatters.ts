@@ -265,3 +265,172 @@ export function validateAddressForVendor(
   }
 }
 
+// Data type validation functions
+export function validateDataTypeForVendor(
+  dataType: string,
+  vendor: 'rockwell' | 'siemens' | 'beckhoff'
+): boolean {
+  switch (vendor.toLowerCase()) {
+    case 'rockwell':
+      return validateRockwellDataType(dataType);
+    case 'siemens':
+      return validateSiemensDataType(dataType);
+    case 'beckhoff':
+      return validateBeckhoffDataType(dataType);
+    default:
+      return false;
+  }
+}
+
+export function validateRockwellDataType(dataType: string): boolean {
+  const validTypes = [
+    'BOOL', 'SINT', 'INT', 'DINT', 'LINT',
+    'USINT', 'UINT', 'UDINT', 'ULINT',
+    'REAL', 'LREAL', 'STRING', 'TIME'
+  ];
+  return validTypes.includes(dataType.toUpperCase());
+}
+
+export function validateSiemensDataType(dataType: string): boolean {
+  const validTypes = [
+    'BOOL', 'BYTE', 'WORD', 'DWORD', 'LWORD',
+    'SINT', 'INT', 'DINT', 'LINT',
+    'USINT', 'UINT', 'UDINT', 'ULINT',
+    'REAL', 'LREAL', 'STRING', 'TIME',
+    'S5TIME', 'TIME_OF_DAY', 'DATE'
+  ];
+  return validTypes.includes(dataType.toUpperCase());
+}
+
+export function validateBeckhoffDataType(dataType: string): boolean {
+  const validTypes = [
+    'BOOL', 'BYTE', 'WORD', 'DWORD', 'LWORD',
+    'SINT', 'INT', 'DINT', 'LINT',
+    'USINT', 'UINT', 'UDINT', 'ULINT',
+    'REAL', 'LREAL', 'STRING', 'TIME'
+  ];
+  // Beckhoff also supports custom types, so we're more permissive
+  // If it's not a standard type, allow it if it follows naming conventions
+  return validTypes.includes(dataType.toUpperCase()) || 
+         /^[A-Z][A-Za-z0-9_]*$/.test(dataType);
+}
+
+// Scope validation functions
+export function validateScopeForVendor(
+  scope: string,
+  vendor: 'rockwell' | 'siemens' | 'beckhoff'
+): boolean {
+  switch (vendor.toLowerCase()) {
+    case 'rockwell':
+      return validateRockwellScope(scope);
+    case 'siemens':
+      return validateSiemensScope(scope);
+    case 'beckhoff':
+      return validateBeckhoffScope(scope);
+    default:
+      return false;
+  }
+}
+
+export function validateRockwellScope(scope: string): boolean {
+  const validScopes = ['global', 'local', 'input', 'output'];
+  return validScopes.includes(scope.toLowerCase());
+}
+
+export function validateSiemensScope(scope: string): boolean {
+  const validScopes = ['global', 'local', 'input', 'output'];
+  return validScopes.includes(scope.toLowerCase());
+}
+
+export function validateBeckhoffScope(scope: string): boolean {
+  const validScopes = ['global', 'local', 'input', 'output'];
+  return validScopes.includes(scope.toLowerCase());
+}
+
+// Tag type validation functions
+export function validateTagTypeForVendor(
+  tagType: string,
+  vendor: 'rockwell' | 'siemens' | 'beckhoff'
+): boolean {
+  switch (vendor.toLowerCase()) {
+    case 'rockwell':
+      return validateRockwellTagType(tagType);
+    case 'siemens':
+      return validateSiemensTagType(tagType);
+    case 'beckhoff':
+      return validateBeckhoffTagType(tagType);
+    default:
+      return false;
+  }
+}
+
+export function validateRockwellTagType(tagType: string): boolean {
+  const validTagTypes = ['input', 'output', 'memory'];
+  return validTagTypes.includes(tagType.toLowerCase());
+}
+
+export function validateSiemensTagType(tagType: string): boolean {
+  const validTagTypes = ['memory', 'input', 'output', 'temp'];
+  return validTagTypes.includes(tagType.toLowerCase());
+}
+
+export function validateBeckhoffTagType(tagType: string): boolean {
+  const validTagTypes = ['input', 'output', 'memory', 'temp', 'constant'];
+  return validTagTypes.includes(tagType.toLowerCase());
+}
+
+// Complete tag validation function
+export interface TagValidationResult {
+  isValid: boolean;
+  errors: string[];
+}
+
+export function validateTagForVendor(
+  tag: {
+    name: string;
+    type: string;
+    data_type?: string;
+    address: string;
+    vendor: string;
+    scope: string;
+    tag_type: string;
+  },
+  vendor: 'rockwell' | 'siemens' | 'beckhoff'
+): TagValidationResult {
+  const errors: string[] = [];
+  
+  // Validate name
+  if (!tag.name || tag.name.trim().length === 0) {
+    errors.push('Tag name is required');
+  } else if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(tag.name)) {
+    errors.push('Tag name must start with a letter or underscore and contain only letters, numbers, and underscores');
+  }
+  
+  // Validate address
+  if (!tag.address || tag.address.trim().length === 0) {
+    errors.push('Address is required');
+  } else if (!validateAddressForVendor(tag.address, vendor)) {
+    errors.push(`Invalid address format for ${vendor}`);
+  }
+  
+  // Validate data type
+  if (tag.type && !validateDataTypeForVendor(tag.type, vendor)) {
+    errors.push(`Invalid data type '${tag.type}' for ${vendor}`);
+  }
+  
+  // Validate scope
+  if (!validateScopeForVendor(tag.scope, vendor)) {
+    errors.push(`Invalid scope '${tag.scope}' for ${vendor}`);
+  }
+  
+  // Validate tag type
+  if (!validateTagTypeForVendor(tag.tag_type, vendor)) {
+    errors.push(`Invalid tag type '${tag.tag_type}' for ${vendor}`);
+  }
+  
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+}
+

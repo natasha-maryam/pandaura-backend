@@ -17,7 +17,7 @@ export interface Tag {
   user_id: string;
   name: string;
   description: string;
-  type: 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'STRING';
+  type: string; // Allow any string to support custom Beckhoff types
   data_type: string;
   address: string;
   default_value: string;
@@ -34,7 +34,7 @@ export interface CreateTagData {
   user_id: string;
   name: string;
   description: string;
-  type: 'BOOL' | 'INT' | 'DINT' | 'REAL' | 'STRING';
+  type: string; // Allow any string to support custom Beckhoff types
   data_type: string;
   address: string;
   default_value: string;

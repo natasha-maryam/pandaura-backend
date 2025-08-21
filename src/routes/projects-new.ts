@@ -249,7 +249,7 @@ router.delete('/:projectId', authenticateToken, async (req: AuthenticatedRequest
       metadata: { projectId, projectName: project.project_name }
     });
 
-    res.json({ message: 'Project deleted successfully' });
+    res.json({ success: true, message: 'Project deleted successfully' });
   } catch (error: any) {
     console.error('Error deleting project:', error);
     res.status(500).json({ error: 'Failed to delete project' });

@@ -19,15 +19,15 @@ function authenticateToken(req, res, next) {
     const headerToken = authHeader && authHeader.split(' ')[1];
     const cookieToken = req.cookies?.authToken;
     const token = headerToken || cookieToken;
-    console.log('🔐 Auth middleware called:', {
-        hasAuthHeader: !!authHeader,
-        hasHeaderToken: !!headerToken,
-        hasCookieToken: !!cookieToken,
-        hasToken: !!token,
-        tokenPrefix: token ? `${token.substring(0, 10)}...` : 'none',
-        url: req.url,
-        method: req.method
-    });
+    // console.log('🔐 Auth middleware called:', {
+    //   hasAuthHeader: !!authHeader,
+    //   hasHeaderToken: !!headerToken,
+    //   hasCookieToken: !!cookieToken,
+    //   hasToken: !!token,
+    //   tokenPrefix: token ? `${token.substring(0, 10)}...` : 'none',
+    //   url: req.url,
+    //   method: req.method
+    // });
     if (!token) {
         console.log('❌ No token provided in header or cookie');
         return res.status(401).json({ error: 'No token provided' });

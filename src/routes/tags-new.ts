@@ -2,10 +2,39 @@ import express from 'express';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/authMiddleware';
 import db from '../db/knex';
 import { logAuditEvent } from '../middleware/auditLogger';
+import { validateTagForVendor } from '../utils/vendorFormatters';
 
 const router = express.Router();
 
-// Get all tags for a project
+// Get all tags for a project (supports both query param and path param)
+router.get('/', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const projectId = req.query.projectId as string;
+    
+    if (!projectId) {
+      return res.status(400).json({ error: 'Project ID is required as query parameter' });
+    }
+    
+    // Verify project exists and user owns it
+    const project = await db('projects')
+      .where({ id: parseInt(projectId), user_id: req.user!.userId })
+      .first();
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const tags = await db('tags')
+      .where('project_id', projectId)
+      .orderBy('name');
+
+    res.json(tags);
+  } catch (error) {
+    console.error('Error fetching tags:', error);
+    res.status(500).json({ error: 'Failed to fetch tags' });
+  }
+});
+
+// Get all tags for a project (path parameter version)
 router.get('/project/:projectId', authenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
     const projectId = req.params.projectId;
@@ -35,15 +64,62 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthenticatedRe
 // Create a new tag
 router.post('/', authenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
-    const { projectId, name, type, dataType, address, defaultValue, vendor, scope } = req.body;
+    const { 
+      project_id, 
+      name, 
+      description,
+      type, 
+      data_type, 
+      address, 
+      default_value, 
+      vendor, 
+      scope, 
+      tag_type, 
+      is_ai_generated 
+    } = req.body;
     
-    if (!projectId || !name) {
+    if (!project_id || !name) {
       return res.status(400).json({ error: 'Project ID and tag name are required' });
+    }
+
+    if (!vendor) {
+      return res.status(400).json({ error: 'Vendor is required' });
+    }
+
+    if (!address) {
+      return res.status(400).json({ error: 'Address is required' });
+    }
+
+    if (!scope) {
+      return res.status(400).json({ error: 'Scope is required' });
+    }
+
+    if (!tag_type) {
+      return res.status(400).json({ error: 'Tag type is required' });
+    }
+
+    // Validate tag data against vendor specifications
+    const tagData = {
+      name: name.trim(),
+      type: type || 'BOOL', // Default to BOOL if not provided
+      data_type,
+      address: address.trim(),
+      vendor: vendor.toLowerCase(),
+      scope: scope.toLowerCase(),
+      tag_type: tag_type.toLowerCase()
+    };
+
+    const validation = validateTagForVendor(tagData, vendor.toLowerCase() as 'rockwell' | 'siemens' | 'beckhoff');
+    if (!validation.isValid) {
+      return res.status(400).json({ 
+        error: 'Tag validation failed', 
+        details: validation.errors 
+      });
     }
 
     // Verify project exists and user owns it
     const project = await db('projects')
-      .where({ id: parseInt(projectId), user_id: req.user!.userId })
+      .where({ id: parseInt(project_id), user_id: req.user!.userId })
       .first();
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
@@ -51,14 +127,18 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res) => {
 
     const [tag] = await db('tags')
       .insert({
-        project_id: projectId,
+        project_id: project_id,
+        user_id: req.user!.userId,
         name: name.trim(),
+        description: description?.trim(),
         type: type?.trim(),
-        data_type: dataType?.trim(),
+        data_type: data_type?.trim(),
         address: address?.trim(),
-        default_value: defaultValue?.trim(),
+        default_value: default_value?.trim(),
         vendor: vendor?.trim(),
         scope: scope?.trim(),
+        tag_type: tag_type?.trim(),
+        is_ai_generated: is_ai_generated || false,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
@@ -70,7 +150,7 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res) => {
       action: `Created tag: ${name} in project ${project.project_name}`,
       ip: req.ip,
       userAgent: req.get('User-Agent'),
-      metadata: { projectId, tagId: tag.id, tagName: name }
+      metadata: { projectId: project_id, tagId: tag.id, tagName: name }
     });
 
     res.status(201).json({
@@ -96,21 +176,66 @@ router.put('/:tagId', authenticateToken, async (req: AuthenticatedRequest, res) 
       return res.status(400).json({ error: 'Invalid tag ID' });
     }
 
-    const { name, type, dataType, address, defaultValue, vendor, scope } = req.body;
+    const { 
+      name, 
+      description,
+      type, 
+      data_type, 
+      address, 
+      default_value, 
+      vendor, 
+      scope, 
+      tag_type, 
+      is_ai_generated 
+    } = req.body;
     
     // Prepare updates
     const updates: any = {};
     if (name !== undefined) updates.name = name.trim();
+    if (description !== undefined) updates.description = description?.trim();
     if (type !== undefined) updates.type = type?.trim();
-    if (dataType !== undefined) updates.data_type = dataType?.trim();
+    if (data_type !== undefined) updates.data_type = data_type?.trim();
     if (address !== undefined) updates.address = address?.trim();
-    if (defaultValue !== undefined) updates.default_value = defaultValue?.trim();
+    if (default_value !== undefined) updates.default_value = default_value?.trim();
     if (vendor !== undefined) updates.vendor = vendor?.trim();
     if (scope !== undefined) updates.scope = scope?.trim();
+    if (tag_type !== undefined) updates.tag_type = tag_type?.trim();
+    if (is_ai_generated !== undefined) updates.is_ai_generated = is_ai_generated;
 
     // Update tag with validation
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
+    // Get current tag to validate against vendor requirements
+    const currentTag = await db('tags').where('id', tagId).first();
+    if (!currentTag) {
+      return res.status(404).json({ error: 'Tag not found' });
+    }
+
+    // Create merged tag data for validation (current + updates)
+    const tagForValidation = {
+      name: updates.name || currentTag.name,
+      type: updates.type || currentTag.type,
+      data_type: updates.data_type || currentTag.data_type,
+      address: updates.address || currentTag.address,
+      vendor: updates.vendor || currentTag.vendor,
+      scope: updates.scope || currentTag.scope,
+      tag_type: updates.tag_type || currentTag.tag_type
+    };
+
+    // Validate the merged tag data
+    if (tagForValidation.vendor) {
+      const validation = validateTagForVendor(
+        tagForValidation, 
+        tagForValidation.vendor.toLowerCase() as 'rockwell' | 'siemens' | 'beckhoff'
+      );
+      if (!validation.isValid) {
+        return res.status(400).json({ 
+          error: 'Tag validation failed', 
+          details: validation.errors 
+        });
+      }
     }
 
     updates.updated_at = new Date().toISOString();
@@ -173,7 +298,7 @@ router.delete('/:tagId', authenticateToken, async (req: AuthenticatedRequest, re
       metadata: { tagId }
     });
 
-    res.json({ message: 'Tag deleted successfully' });
+    res.json({ success: true, message: 'Tag deleted successfully' });
   } catch (error: any) {
     console.error('Error deleting tag:', error);
     res.status(500).json({ error: 'Failed to delete tag' });
@@ -206,7 +331,7 @@ router.delete('/project/:projectId', authenticateToken, async (req: Authenticate
       metadata: { projectId }
     });
 
-    res.json({ message: 'All tags deleted successfully' });
+    res.json({ success: true, message: 'All tags deleted successfully' });
   } catch (error: any) {
     console.error('Error deleting tags:', error);
     res.status(500).json({ error: 'Failed to delete tags' });
