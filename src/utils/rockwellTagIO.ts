@@ -1,13 +1,15 @@
 // rockwellTagIO.ts
-// Plug-and-play Rockwell CSV / L5X import-export for Pandaura AS
+// Plug-and-play Rockwell CSV / L5X / XLSX import-export for Pandaura AS
 // Requires: TagsTable, CreateTagData from db/tables/tags
-// Dependencies: csv-parse, fast-csv, xml2js, xmlbuilder
+// Dependencies: csv-parse, fast-csv, xml2js, xmlbuilder, xlsx
 
 import { parse } from 'csv-parse/sync';
 import * as fastCsv from 'fast-csv';
 import * as xml2js from 'xml2js';
 import * as xmlbuilder from 'xmlbuilder';
-import { TagsTable, CreateTagData, Tag } from '../db/tables/tags';
+import * as XLSX from 'xlsx';
+import { CreateTagData, Tag } from '../db/tables/tags';
+import db from '../db/knex';
 import { Writable } from 'stream';
 
 // Rockwell tag CSV headers mapping & normalization
@@ -242,7 +244,11 @@ export async function importRockwellCsv(
 
   // Upsert tags into database
   for (const tag of validTags) {
-    TagsTable.createTag(tag);
+    await db('tags').insert({
+      ...tag,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
   }
 
   return { success: true, inserted: validTags.length };
@@ -266,15 +272,12 @@ export async function exportRockwellCsv(
   const delimiter = options.delimiter || ',';
   
   // Only get Rockwell tags for this project
-  const tags = TagsTable.getTags({ 
-    project_id: projectId, 
-    page_size: 10000, 
-    page: 1,
-    vendor: 'rockwell'
-  }).tags;
+  const tags = await db('tags')
+    .where({ project_id: projectId, vendor: 'rockwell' })
+    .orderBy('name');
 
   console.log(`🚀 Exporting Rockwell CSV for project ${projectId}: Found ${tags.length} Rockwell tags`);
-  tags.forEach(tag => console.log(`  - ${tag.name} (${tag.vendor})`));
+  tags.forEach((tag: any) => console.log(`  - ${tag.name} (${tag.vendor})`));
 
   const headers = [
     'Tag Name',
@@ -386,7 +389,11 @@ export async function importRockwellL5X(
 
   // Upsert tags into database
   for (const tag of validTags) {
-    TagsTable.createTag(tag);
+    await db('tags').insert({
+      ...tag,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
   }
 
   return { success: true, inserted: validTags.length };
@@ -405,12 +412,9 @@ export async function exportRockwellL5X(
   outStream: Writable
 ): Promise<boolean> {
   // Only get Rockwell tags for this project
-  const tags = TagsTable.getTags({ 
-    project_id: projectId, 
-    page_size: 10000, 
-    page: 1,
-    vendor: 'rockwell'
-  }).tags;
+  const tags = await db('tags')
+    .where({ project_id: projectId, vendor: 'rockwell' })
+    .orderBy('name');
 
   // Build XML root
   const root = xmlbuilder.create('ControllerTags', { encoding: 'utf-8' });
@@ -429,4 +433,87 @@ export async function exportRockwellL5X(
   outStream.write(xmlString);
   outStream.end();
   return true;
+}
+
+// --- XLSX Export Function ---
+export async function exportRockwellXlsx(projectId: number, outStream: Writable): Promise<boolean> {
+  try {
+    console.log(`🔄 Starting Rockwell XLSX export for project ${projectId}`);
+
+    // Fetch tags from the database
+    const tags = await db('tags')
+      .where({ project_id: projectId, vendor: 'rockwell' })
+      .select('*');
+
+    if (tags.length === 0) {
+      console.log('⚠️ No Rockwell tags found for export');
+      // Create an empty workbook
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.aoa_to_sheet([
+        ['Tag Name', 'Data Type', 'Address', 'Default Value', 'Description', 'Scope']
+      ]);
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Rockwell Tags');
+      
+      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      outStream.write(buffer);
+      outStream.end();
+      return true;
+    }
+
+    // Prepare data for XLSX
+    const worksheetData = [
+      // Header row (matching Studio 5000 format)
+      ['Tag Name', 'Data Type', 'Address', 'Default Value', 'Description', 'Scope']
+    ];
+
+    // Add tag data rows
+    for (const tag of tags) {
+      worksheetData.push([
+        tag.name || '',
+        tag.data_type || tag.type || 'DINT',
+        tag.address || '',
+        tag.default_value || '',
+        tag.description || '',
+        tag.scope || 'Global'
+      ]);
+    }
+
+    // Create workbook and worksheet
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+
+    // Add some styling to the header row
+    const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:F1');
+    for (let col = range.s.c; col <= range.e.c; col++) {
+      const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
+      if (!worksheet[cellAddress]) continue;
+      worksheet[cellAddress].s = {
+        font: { bold: true },
+        fill: { fgColor: { rgb: 'FFE6E6E6' } }
+      };
+    }
+
+    // Set column widths
+    worksheet['!cols'] = [
+      { width: 25 }, // Tag Name
+      { width: 15 }, // Data Type
+      { width: 20 }, // Address
+      { width: 15 }, // Default Value
+      { width: 30 }, // Description
+      { width: 12 }  // Scope
+    ];
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Rockwell Tags');
+
+    // Generate XLSX buffer and write to stream
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    outStream.write(buffer);
+    outStream.end();
+
+    console.log(`✅ Successfully exported ${tags.length} Rockwell tags to XLSX`);
+    return true;
+
+  } catch (error) {
+    throw new Error(`Failed to export Rockwell XLSX: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }

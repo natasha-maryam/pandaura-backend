@@ -4,12 +4,47 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
+const multer_1 = __importDefault(require("multer"));
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const knex_1 = __importDefault(require("../db/knex"));
 const auditLogger_1 = require("../middleware/auditLogger");
 const vendorFormatters_1 = require("../utils/vendorFormatters");
+const beckhoffTagIO_1 = require("../utils/beckhoffTagIO");
+const siemensTagIO_1 = require("../utils/siemensTagIO");
+const rockwellTagIO_1 = require("../utils/rockwellTagIO");
 const router = express_1.default.Router();
-// Get all tags for a project
+// Configure multer for file uploads
+const upload = (0, multer_1.default)({
+    limits: {
+        fileSize: 10 * 1024 * 1024 // 10MB limit
+    },
+    storage: multer_1.default.memoryStorage()
+});
+// Get all tags for a project (supports both query param and path param)
+router.get('/', authMiddleware_1.authenticateToken, async (req, res) => {
+    try {
+        const projectId = req.query.projectId;
+        if (!projectId) {
+            return res.status(400).json({ error: 'Project ID is required as query parameter' });
+        }
+        // Verify project exists and user owns it
+        const project = await (0, knex_1.default)('projects')
+            .where({ id: parseInt(projectId), user_id: req.user.userId })
+            .first();
+        if (!project) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+        const tags = await (0, knex_1.default)('tags')
+            .where('project_id', projectId)
+            .orderBy('name');
+        res.json(tags);
+    }
+    catch (error) {
+        console.error('Error fetching tags:', error);
+        res.status(500).json({ error: 'Failed to fetch tags' });
+    }
+});
+// Get all tags for a project (path parameter version)
 router.get('/project/:projectId', authMiddleware_1.authenticateToken, async (req, res) => {
     try {
         const projectId = req.params.projectId;
@@ -228,7 +263,7 @@ router.delete('/:tagId', authMiddleware_1.authenticateToken, async (req, res) =>
             userAgent: req.get('User-Agent'),
             metadata: { tagId }
         });
-        res.json({ message: 'Tag deleted successfully' });
+        res.json({ success: true, message: 'Tag deleted successfully' });
     }
     catch (error) {
         console.error('Error deleting tag:', error);
@@ -257,11 +292,381 @@ router.delete('/project/:projectId', authMiddleware_1.authenticateToken, async (
             userAgent: req.get('User-Agent'),
             metadata: { projectId }
         });
-        res.json({ message: 'All tags deleted successfully' });
+        res.json({ success: true, message: 'All tags deleted successfully' });
     }
     catch (error) {
         console.error('Error deleting tags:', error);
         res.status(500).json({ error: 'Failed to delete tags' });
+    }
+});
+// === Import Endpoints ===
+// Import Beckhoff CSV
+router.post('/projects/:projectId/import/beckhoff/csv', authMiddleware_1.authenticateToken, upload.single('file'), async (req, res) => {
+    try {
+        const projectId = parseInt(req.params.projectId);
+        const file = req.file;
+        if (!file) {
+            return res.status(400).json({ error: 'No file uploaded' });
+        }
+        // Verify project exists and user owns it
+        const project = await (0, knex_1.default)('projects')
+            .where({ id: projectId, user_id: req.user.userId })
+            .first();
+        if (!project) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+        const result = await (0, beckhoffTagIO_1.importBeckhoffCsv)(file.buffer, projectId, req.user.userId);
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+        // Log audit event
+        await (0, auditLogger_1.logAuditEvent)({
+            userId: req.user.userId,
+            action: `Imported ${result.inserted} Beckhoff tags from CSV to project: ${project.project_name}`,
+            ip: req.ip,
+            userAgent: req.get('User-Agent'),
+            metadata: { projectId, imported: result.inserted }
+        });
+        res.json(result);
+    }
+    catch (error) {
+        console.error('Error importing Beckhoff CSV:', error);
+        res.status(500).json({ error: 'Failed to import Beckhoff CSV' });
+    }
+});
+// Import Beckhoff XML
+router.post('/projects/:projectId/import/beckhoff/xml', authMiddleware_1.authenticateToken, upload.single('file'), async (req, res) => {
+    try {
+        const projectId = parseInt(req.params.projectId);
+        const file = req.file;
+        if (!file) {
+            return res.status(400).json({ error: 'No file uploaded' });
+        }
+        // Verify project exists and user owns it
+        const project = await (0, knex_1.default)('projects')
+            .where({ id: projectId, user_id: req.user.userId })
+            .first();
+        if (!project) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+        const result = await (0, beckhoffTagIO_1.importBeckhoffXml)(file.buffer, projectId, req.user.userId);
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+        // Log audit event
+        await (0, auditLogger_1.logAuditEvent)({
+            userId: req.user.userId,
+            action: `Imported ${result.inserted} Beckhoff tags from XML to project: ${project.project_name}`,
+            ip: req.ip,
+            userAgent: req.get('User-Agent'),
+            metadata: { projectId, imported: result.inserted }
+        });
+        res.json(result);
+    }
+    catch (error) {
+        console.error('Error importing Beckhoff XML:', error);
+        res.status(500).json({ error: 'Failed to import Beckhoff XML' });
+    }
+});
+// Import Siemens CSV
+router.post('/projects/:projectId/import/siemens/csv', authMiddleware_1.authenticateToken, upload.single('file'), async (req, res) => {
+    try {
+        const projectId = parseInt(req.params.projectId);
+        const file = req.file;
+        if (!file) {
+            return res.status(400).json({ error: 'No file uploaded' });
+        }
+        // Verify project exists and user owns it
+        const project = await (0, knex_1.default)('projects')
+            .where({ id: projectId, user_id: req.user.userId })
+            .first();
+        if (!project) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+        const result = await (0, siemensTagIO_1.importSiemensCsv)(file.buffer, projectId, req.user.userId);
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+        // Log audit event
+        await (0, auditLogger_1.logAuditEvent)({
+            userId: req.user.userId,
+            action: `Imported ${result.inserted} Siemens tags from CSV to project: ${project.project_name}`,
+            ip: req.ip,
+            userAgent: req.get('User-Agent'),
+            metadata: { projectId, imported: result.inserted }
+        });
+        res.json(result);
+    }
+    catch (error) {
+        console.error('Error importing Siemens CSV:', error);
+        res.status(500).json({ error: 'Failed to import Siemens CSV' });
+    }
+});
+// Import Rockwell CSV
+router.post('/projects/:projectId/import/rockwell/csv', authMiddleware_1.authenticateToken, upload.single('file'), async (req, res) => {
+    try {
+        const projectId = parseInt(req.params.projectId);
+        const file = req.file;
+        if (!file) {
+            return res.status(400).json({ error: 'No file uploaded' });
+        }
+        // Verify project exists and user owns it
+        const project = await (0, knex_1.default)('projects')
+            .where({ id: projectId, user_id: req.user.userId })
+            .first();
+        if (!project) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+        const result = await (0, rockwellTagIO_1.importRockwellCsv)(file.buffer, projectId, req.user.userId);
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+        // Log audit event
+        await (0, auditLogger_1.logAuditEvent)({
+            userId: req.user.userId,
+            action: `Imported ${result.inserted} Rockwell tags from CSV to project: ${project.project_name}`,
+            ip: req.ip,
+            userAgent: req.get('User-Agent'),
+            metadata: { projectId, imported: result.inserted }
+        });
+        res.json(result);
+    }
+    catch (error) {
+        console.error('Error importing Rockwell CSV:', error);
+        res.status(500).json({ error: 'Failed to import Rockwell CSV' });
+    }
+});
+// Import Rockwell L5X
+router.post('/projects/:projectId/import/rockwell/l5x', authMiddleware_1.authenticateToken, upload.single('file'), async (req, res) => {
+    try {
+        const projectId = parseInt(req.params.projectId);
+        const file = req.file;
+        if (!file) {
+            return res.status(400).json({ error: 'No file uploaded' });
+        }
+        // Verify project exists and user owns it
+        const project = await (0, knex_1.default)('projects')
+            .where({ id: projectId, user_id: req.user.userId })
+            .first();
+        if (!project) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+        const result = await (0, rockwellTagIO_1.importRockwellL5X)(file.buffer, projectId, req.user.userId);
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+        // Log audit event
+        await (0, auditLogger_1.logAuditEvent)({
+            userId: req.user.userId,
+            action: `Imported ${result.inserted} Rockwell tags from L5X to project: ${project.project_name}`,
+            ip: req.ip,
+            userAgent: req.get('User-Agent'),
+            metadata: { projectId, imported: result.inserted }
+        });
+        res.json(result);
+    }
+    catch (error) {
+        console.error('Error importing Rockwell L5X:', error);
+        res.status(500).json({ error: 'Failed to import Rockwell L5X' });
+    }
+});
+// === Export Endpoints ===
+// Export Beckhoff CSV
+router.get('/projects/:projectId/export/beckhoff/csv', authMiddleware_1.authenticateToken, async (req, res) => {
+    try {
+        const projectId = parseInt(req.params.projectId);
+        // Verify project exists and user owns it
+        const project = await (0, knex_1.default)('projects')
+            .select('id', 'project_name', 'user_id')
+            .where({ id: projectId, user_id: req.user.userId })
+            .first();
+        if (!project) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+        const fileName = `${project.project_name || project.id || 'project'}-beckhoff-tags.csv`;
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        await (0, beckhoffTagIO_1.exportBeckhoffCsv)(projectId, res, { delimiter: ',' });
+    }
+    catch (error) {
+        console.error('Error exporting Beckhoff CSV:', error);
+        res.status(500).json({ error: 'Failed to export Beckhoff CSV' });
+    }
+});
+// Export Beckhoff XML
+router.get('/projects/:projectId/export/beckhoff/xml', authMiddleware_1.authenticateToken, async (req, res) => {
+    try {
+        const projectId = parseInt(req.params.projectId);
+        // Verify project exists and user owns it
+        const project = await (0, knex_1.default)('projects')
+            .select('id', 'project_name', 'user_id')
+            .where({ id: projectId, user_id: req.user.userId })
+            .first();
+        if (!project) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+        const fileName = `${project.project_name || project.id || 'project'}-beckhoff-tags.xml`;
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+        await (0, beckhoffTagIO_1.exportBeckhoffXml)(projectId, res);
+    }
+    catch (error) {
+        console.error('Error exporting Beckhoff XML:', error);
+        res.status(500).json({ error: 'Failed to export Beckhoff XML' });
+    }
+});
+// Export Siemens CSV
+router.get('/projects/:projectId/export/siemens/csv', authMiddleware_1.authenticateToken, async (req, res) => {
+    try {
+        const projectId = parseInt(req.params.projectId);
+        // Verify project exists and user owns it
+        const project = await (0, knex_1.default)('projects')
+            .select('id', 'project_name', 'user_id')
+            .where({ id: projectId, user_id: req.user.userId })
+            .first();
+        if (!project) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+        const fileName = `${project.project_name || project.id || 'project'}-siemens-tags.csv`;
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        await (0, siemensTagIO_1.exportSiemensCsv)(projectId, res, { delimiter: ';' });
+    }
+    catch (error) {
+        console.error('Error exporting Siemens CSV:', error);
+        res.status(500).json({ error: 'Failed to export Siemens CSV' });
+    }
+});
+// Export Siemens XML
+router.get('/projects/:projectId/export/siemens/xml', authMiddleware_1.authenticateToken, async (req, res) => {
+    try {
+        const projectId = parseInt(req.params.projectId);
+        // Verify project exists and user owns it
+        const project = await (0, knex_1.default)('projects')
+            .select('id', 'project_name', 'user_id')
+            .where({ id: projectId, user_id: req.user.userId })
+            .first();
+        if (!project) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+        const fileName = `${project.project_name || project.id || 'project'}-siemens-tags.xml`;
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+        await (0, siemensTagIO_1.exportSiemensXml)(projectId, res);
+    }
+    catch (error) {
+        console.error('Error exporting Siemens XML:', error);
+        res.status(500).json({ error: 'Failed to export Siemens XML' });
+    }
+});
+// Export Rockwell CSV
+router.get('/projects/:projectId/export/rockwell/csv', authMiddleware_1.authenticateToken, async (req, res) => {
+    try {
+        const projectId = parseInt(req.params.projectId);
+        // Verify project exists and user owns it
+        const project = await (0, knex_1.default)('projects')
+            .select('id', 'project_name', 'user_id')
+            .where({ id: projectId, user_id: req.user.userId })
+            .first();
+        if (!project) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+        const fileName = `${project.project_name || project.id || 'project'}-rockwell-tags.csv`;
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        await (0, rockwellTagIO_1.exportRockwellCsv)(projectId, res, { delimiter: ',' });
+    }
+    catch (error) {
+        console.error('Error exporting Rockwell CSV:', error);
+        res.status(500).json({ error: 'Failed to export Rockwell CSV' });
+    }
+});
+// Export Rockwell L5X
+router.get('/projects/:projectId/export/rockwell/l5x', authMiddleware_1.authenticateToken, async (req, res) => {
+    try {
+        const projectId = parseInt(req.params.projectId);
+        // Verify project exists and user owns it
+        const project = await (0, knex_1.default)('projects')
+            .select('id', 'project_name', 'user_id')
+            .where({ id: projectId, user_id: req.user.userId })
+            .first();
+        if (!project) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+        const fileName = `${project.project_name || project.id || 'project'}-rockwell-tags.L5X`;
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+        await (0, rockwellTagIO_1.exportRockwellL5X)(projectId, res);
+    }
+    catch (error) {
+        console.error('Error exporting Rockwell L5X:', error);
+        res.status(500).json({ error: 'Failed to export Rockwell L5X' });
+    }
+});
+// Export Beckhoff XLSX
+router.get('/projects/:projectId/export/beckhoff/xlsx', authMiddleware_1.authenticateToken, async (req, res) => {
+    try {
+        const projectId = parseInt(req.params.projectId);
+        // Verify project exists and user owns it
+        const project = await (0, knex_1.default)('projects')
+            .select('id', 'project_name', 'user_id')
+            .where({ id: projectId, user_id: req.user.userId })
+            .first();
+        if (!project) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+        const fileName = `${project.project_name || project.id || 'project'}-beckhoff-tags.xlsx`;
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        await (0, beckhoffTagIO_1.exportBeckhoffXlsx)(projectId, res);
+    }
+    catch (error) {
+        console.error('Error exporting Beckhoff XLSX:', error);
+        res.status(500).json({ error: 'Failed to export Beckhoff XLSX' });
+    }
+});
+// Export Siemens XLSX
+router.get('/projects/:projectId/export/siemens/xlsx', authMiddleware_1.authenticateToken, async (req, res) => {
+    try {
+        const projectId = parseInt(req.params.projectId);
+        // Verify project exists and user owns it
+        const project = await (0, knex_1.default)('projects')
+            .select('id', 'project_name', 'user_id')
+            .where({ id: projectId, user_id: req.user.userId })
+            .first();
+        if (!project) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+        const fileName = `${project.project_name || project.id || 'project'}-siemens-tags.xlsx`;
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        await (0, siemensTagIO_1.exportSiemensXlsx)(projectId, res);
+    }
+    catch (error) {
+        console.error('Error exporting Siemens XLSX:', error);
+        res.status(500).json({ error: 'Failed to export Siemens XLSX' });
+    }
+});
+// Export Rockwell XLSX
+router.get('/projects/:projectId/export/rockwell/xlsx', authMiddleware_1.authenticateToken, async (req, res) => {
+    try {
+        const projectId = parseInt(req.params.projectId);
+        // Verify project exists and user owns it
+        const project = await (0, knex_1.default)('projects')
+            .select('id', 'project_name', 'user_id')
+            .where({ id: projectId, user_id: req.user.userId })
+            .first();
+        if (!project) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+        const fileName = `${project.project_name || project.id || 'project'}-rockwell-tags.xlsx`;
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        await (0, rockwellTagIO_1.exportRockwellXlsx)(projectId, res);
+    }
+    catch (error) {
+        console.error('Error exporting Rockwell XLSX:', error);
+        res.status(500).json({ error: 'Failed to export Rockwell XLSX' });
     }
 });
 exports.default = router;

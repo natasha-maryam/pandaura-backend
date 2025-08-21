@@ -226,7 +226,7 @@ router.delete('/:projectId', authMiddleware_1.authenticateToken, async (req, res
             userAgent: req.get('User-Agent'),
             metadata: { projectId, projectName: project.project_name }
         });
-        res.json({ message: 'Project deleted successfully' });
+        res.json({ success: true, message: 'Project deleted successfully' });
     }
     catch (error) {
         console.error('Error deleting project:', error);

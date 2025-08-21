@@ -1,12 +1,13 @@
 // beckhoffTagIO.ts
-// Plug-and-play Beckhoff CSV + XML import/export helper for Pandaura AS backend
+// Plug-and-play Beckhoff CSV + XML + XLSX import/export helper for Pandaura AS backend
 // Requires: TagsTable, CreateTagData from db/tables/tags
-// Dependencies: csv-parse, fast-csv, xml2js, xmlbuilder
+// Dependencies: csv-parse, fast-csv, xml2js, xmlbuilder, xlsx
 
 import { parse } from 'csv-parse/sync';
 import * as fastCsv from 'fast-csv';
 import * as xml2js from 'xml2js';
 import * as xmlbuilder from 'xmlbuilder';
+import * as XLSX from 'xlsx';
 import { CreateTagData, Tag } from '../db/tables/tags';
 import db from '../db/knex';
 import { Writable } from 'stream';
@@ -249,25 +250,33 @@ async function upsertTagsInDB(projectId: number, userId: string, tags: CreateTag
   for (const tagData of tags) {
     try {
       // Try to find existing tag
-      const existingTagsResult = TagsTable.getTags({ project_id: projectId });
-      const existingTag = existingTagsResult.tags.find((t: Tag) => t.name === tagData.name);
+      const existingTag = await db('tags')
+        .where({ project_id: projectId, name: tagData.name })
+        .first();
       
       if (existingTag) {
         // Update existing tag
-        TagsTable.update(existingTag.id, {
-          description: tagData.description,
-          type: tagData.type,
-          data_type: tagData.data_type,
-          address: tagData.address,
-          default_value: tagData.default_value,
-          vendor: tagData.vendor,
-          scope: tagData.scope,
-          tag_type: tagData.tag_type,
-          is_ai_generated: tagData.is_ai_generated
-        });
+        await db('tags')
+          .where({ id: existingTag.id })
+          .update({
+            description: tagData.description,
+            type: tagData.type,
+            data_type: tagData.data_type,
+            address: tagData.address,
+            default_value: tagData.default_value,
+            vendor: tagData.vendor,
+            scope: tagData.scope,
+            tag_type: tagData.tag_type,
+            is_ai_generated: tagData.is_ai_generated,
+            updated_at: new Date().toISOString()
+          });
       } else {
         // Create new tag
-        TagsTable.create(tagData);
+        await db('tags').insert({
+          ...tagData,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
       }
     } catch (error) {
       console.error(`Error upserting tag ${tagData.name}:`, error);
@@ -354,14 +363,12 @@ export async function exportBeckhoffCsv(projectId: number, outStream: Writable, 
   
   try {
     // Only get Beckhoff tags for this project
-    const tagsResult = TagsTable.getTags({ 
-      project_id: projectId,
-      vendor: 'beckhoff'
-    });
-    const tags = tagsResult.tags;
+    const tags = await db('tags')
+      .where({ project_id: projectId, vendor: 'beckhoff' })
+      .orderBy('name');
 
     console.log(`🔧 Exporting Beckhoff CSV for project ${projectId}: Found ${tags.length} Beckhoff tags`);
-    tags.forEach(tag => console.log(`  - ${tag.name} (${tag.vendor})`));
+    tags.forEach((tag: any) => console.log(`  - ${tag.name} (${tag.vendor})`));
 
     const headers = [
       'Name',
@@ -486,11 +493,9 @@ export async function importBeckhoffXml(buffer: Buffer, projectId: number, userI
 export async function exportBeckhoffXml(projectId: number, outStream: Writable): Promise<boolean> {
   try {
     // Only get Beckhoff tags for this project
-    const tagsResult = TagsTable.getTags({ 
-      project_id: projectId,
-      vendor: 'beckhoff'
-    });
-    const tags = tagsResult.tags;
+    const tags = await db('tags')
+      .where({ project_id: projectId, vendor: 'beckhoff' })
+      .orderBy('name');
 
     const root = xmlbuilder.create('Variables', { encoding: 'utf-8' });
 
@@ -509,6 +514,89 @@ export async function exportBeckhoffXml(projectId: number, outStream: Writable):
     return true;
   } catch (error) {
     throw new Error(`Failed to export Beckhoff XML: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+// --- XLSX Export Function ---
+export async function exportBeckhoffXlsx(projectId: number, outStream: Writable): Promise<boolean> {
+  try {
+    console.log(`🔄 Starting Beckhoff XLSX export for project ${projectId}`);
+
+    // Fetch tags from the database
+    const tags = await db('tags')
+      .where({ project_id: projectId, vendor: 'beckhoff' })
+      .select('*');
+
+    if (tags.length === 0) {
+      console.log('⚠️ No Beckhoff tags found for export');
+      // Create an empty workbook
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.aoa_to_sheet([
+        ['Name', 'Data Type', 'Address', 'Default Value', 'Description', 'Scope']
+      ]);
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Beckhoff Tags');
+      
+      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      outStream.write(buffer);
+      outStream.end();
+      return true;
+    }
+
+    // Prepare data for XLSX
+    const worksheetData = [
+      // Header row
+      ['Name', 'Data Type', 'Address', 'Default Value', 'Description', 'Scope']
+    ];
+
+    // Add tag data rows
+    for (const tag of tags) {
+      worksheetData.push([
+        tag.name || '',
+        tag.data_type || tag.type || '',
+        tag.address || '',
+        tag.default_value || '',
+        tag.description || '',
+        tag.scope || 'global'
+      ]);
+    }
+
+    // Create workbook and worksheet
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+
+    // Add some styling to the header row
+    const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:F1');
+    for (let col = range.s.c; col <= range.e.c; col++) {
+      const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
+      if (!worksheet[cellAddress]) continue;
+      worksheet[cellAddress].s = {
+        font: { bold: true },
+        fill: { fgColor: { rgb: 'FFE6E6E6' } }
+      };
+    }
+
+    // Set column widths
+    worksheet['!cols'] = [
+      { width: 25 }, // Name
+      { width: 15 }, // Data Type
+      { width: 20 }, // Address
+      { width: 15 }, // Default Value
+      { width: 30 }, // Description
+      { width: 10 }  // Scope
+    ];
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Beckhoff Tags');
+
+    // Generate XLSX buffer and write to stream
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    outStream.write(buffer);
+    outStream.end();
+
+    console.log(`✅ Successfully exported ${tags.length} Beckhoff tags to XLSX`);
+    return true;
+
+  } catch (error) {
+    throw new Error(`Failed to export Beckhoff XLSX: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 

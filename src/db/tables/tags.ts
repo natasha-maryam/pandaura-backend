@@ -17,13 +17,17 @@ export interface Tag {
 
 export interface CreateTagData {
   project_id: number;
+  user_id?: string;
   name: string;
+  description?: string;
   type?: string;
   data_type?: string;
   address?: string;
   default_value?: string;
   vendor?: string;
   scope?: string;
+  tag_type?: string;
+  is_ai_generated?: boolean;
 }
 
 export interface UpdateTagData {

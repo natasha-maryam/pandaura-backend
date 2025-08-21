@@ -1,7 +1,8 @@
 import { Writable } from 'stream';
 import { parse } from 'csv-parse';
+import * as XLSX from 'xlsx';
 import { CreateTagData } from '../db/tables/tags';
-import { TagsTable } from '../db/tables/tags';
+import db from '../db/knex';
 
 interface ParsedSiemensRow {
   Name: string;
@@ -135,7 +136,11 @@ export async function importSiemensCsv(
 
         // Insert valid tags
         for (const tag of validTags) {
-          await TagsTable.createTag(tag);
+          await db('tags').insert({
+            ...tag,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
         }
 
         resolve({ success: true, inserted: validTags.length });
@@ -168,7 +173,9 @@ export async function exportSiemensCsv(
     outStream.write(headers);
 
     // Get all Siemens tags for the project
-    const { tags } = await TagsTable.getTags({ project_id: projectId, vendor: 'siemens' });
+    const tags = await db('tags')
+      .where({ project_id: projectId, vendor: 'siemens' })
+      .orderBy('name');
 
     for (const tag of tags) {
       // Format tag for Siemens
@@ -210,7 +217,9 @@ export async function exportSiemensXml(
     const xmlBuilder = require('xmlbuilder');
     
     // Get all Siemens tags for the project
-    const { tags } = await TagsTable.getTags({ project_id: projectId, vendor: 'siemens' });
+    const tags = await db('tags')
+      .where({ project_id: projectId, vendor: 'siemens' })
+      .orderBy('name');
 
     // Create XML structure
     const xml = xmlBuilder.create('Siemens.TIA.Portal.TagTable', { version: '1.0', encoding: 'UTF-8' });
@@ -248,5 +257,88 @@ export async function exportSiemensXml(
   } catch (error) {
     console.error('Error exporting Siemens XML:', error);
     throw error;
+  }
+}
+
+// --- XLSX Export Function ---
+export async function exportSiemensXlsx(projectId: number, outStream: Writable): Promise<boolean> {
+  try {
+    console.log(`🔄 Starting Siemens XLSX export for project ${projectId}`);
+
+    // Fetch tags from the database
+    const tags = await db('tags')
+      .where({ project_id: projectId, vendor: 'siemens' })
+      .select('*');
+
+    if (tags.length === 0) {
+      console.log('⚠️ No Siemens tags found for export');
+      // Create an empty workbook
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.aoa_to_sheet([
+        ['Name', 'Data Type', 'Address', 'Initial Value', 'Comment', 'Scope']
+      ]);
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Siemens Tags');
+      
+      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      outStream.write(buffer);
+      outStream.end();
+      return true;
+    }
+
+    // Prepare data for XLSX
+    const worksheetData = [
+      // Header row
+      ['Name', 'Data Type', 'Address', 'Initial Value', 'Comment', 'Scope']
+    ];
+
+    // Add tag data rows
+    for (const tag of tags) {
+      worksheetData.push([
+        tag.name || '',
+        tag.data_type || tag.type || '',
+        tag.address || '',
+        tag.default_value || '',
+        tag.description || '',
+        tag.scope || 'global'
+      ]);
+    }
+
+    // Create workbook and worksheet
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+
+    // Add some styling to the header row
+    const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:F1');
+    for (let col = range.s.c; col <= range.e.c; col++) {
+      const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
+      if (!worksheet[cellAddress]) continue;
+      worksheet[cellAddress].s = {
+        font: { bold: true },
+        fill: { fgColor: { rgb: 'FFE6E6E6' } }
+      };
+    }
+
+    // Set column widths
+    worksheet['!cols'] = [
+      { width: 25 }, // Name
+      { width: 15 }, // Data Type
+      { width: 20 }, // Address
+      { width: 15 }, // Initial Value
+      { width: 30 }, // Comment
+      { width: 10 }  // Scope
+    ];
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Siemens Tags');
+
+    // Generate XLSX buffer and write to stream
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    outStream.write(buffer);
+    outStream.end();
+
+    console.log(`✅ Successfully exported ${tags.length} Siemens tags to XLSX`);
+    return true;
+
+  } catch (error) {
+    throw new Error(`Failed to export Siemens XLSX: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }

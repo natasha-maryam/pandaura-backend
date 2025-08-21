@@ -1,10 +1,22 @@
 import express from 'express';
+import multer from 'multer';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/authMiddleware';
 import db from '../db/knex';
 import { logAuditEvent } from '../middleware/auditLogger';
 import { validateTagForVendor } from '../utils/vendorFormatters';
+import { exportBeckhoffCsv, exportBeckhoffXml, exportBeckhoffXlsx, importBeckhoffCsv, importBeckhoffXml } from '../utils/beckhoffTagIO';
+import { exportSiemensCsv, exportSiemensXml, exportSiemensXlsx, importSiemensCsv } from '../utils/siemensTagIO';
+import { exportRockwellCsv, exportRockwellL5X, exportRockwellXlsx, importRockwellCsv, importRockwellL5X } from '../utils/rockwellTagIO';
 
 const router = express.Router();
+
+// Configure multer for file uploads
+const upload = multer({
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  },
+  storage: multer.memoryStorage()
+});
 
 // Get all tags for a project (supports both query param and path param)
 router.get('/', authenticateToken, async (req: AuthenticatedRequest, res) => {
@@ -335,6 +347,444 @@ router.delete('/project/:projectId', authenticateToken, async (req: Authenticate
   } catch (error: any) {
     console.error('Error deleting tags:', error);
     res.status(500).json({ error: 'Failed to delete tags' });
+  }
+});
+
+// === Import Endpoints ===
+
+// Import Beckhoff CSV
+router.post('/projects/:projectId/import/beckhoff/csv', authenticateToken, upload.single('file'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const projectId = parseInt(req.params.projectId);
+    const file = req.file;
+
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Verify project exists and user owns it
+    const project = await db('projects')
+      .where({ id: projectId, user_id: req.user!.userId })
+      .first();
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const result = await importBeckhoffCsv(file.buffer, projectId, req.user!.userId);
+    
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    // Log audit event
+    await logAuditEvent({
+      userId: req.user!.userId,
+      action: `Imported ${result.inserted} Beckhoff tags from CSV to project: ${project.project_name}`,
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      metadata: { projectId, imported: result.inserted }
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error importing Beckhoff CSV:', error);
+    res.status(500).json({ error: 'Failed to import Beckhoff CSV' });
+  }
+});
+
+// Import Beckhoff XML
+router.post('/projects/:projectId/import/beckhoff/xml', authenticateToken, upload.single('file'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const projectId = parseInt(req.params.projectId);
+    const file = req.file;
+
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Verify project exists and user owns it
+    const project = await db('projects')
+      .where({ id: projectId, user_id: req.user!.userId })
+      .first();
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const result = await importBeckhoffXml(file.buffer, projectId, req.user!.userId);
+    
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    // Log audit event
+    await logAuditEvent({
+      userId: req.user!.userId,
+      action: `Imported ${result.inserted} Beckhoff tags from XML to project: ${project.project_name}`,
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      metadata: { projectId, imported: result.inserted }
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error importing Beckhoff XML:', error);
+    res.status(500).json({ error: 'Failed to import Beckhoff XML' });
+  }
+});
+
+// Import Siemens CSV
+router.post('/projects/:projectId/import/siemens/csv', authenticateToken, upload.single('file'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const projectId = parseInt(req.params.projectId);
+    const file = req.file;
+
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Verify project exists and user owns it
+    const project = await db('projects')
+      .where({ id: projectId, user_id: req.user!.userId })
+      .first();
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const result = await importSiemensCsv(file.buffer, projectId, req.user!.userId);
+    
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    // Log audit event
+    await logAuditEvent({
+      userId: req.user!.userId,
+      action: `Imported ${result.inserted} Siemens tags from CSV to project: ${project.project_name}`,
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      metadata: { projectId, imported: result.inserted }
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error importing Siemens CSV:', error);
+    res.status(500).json({ error: 'Failed to import Siemens CSV' });
+  }
+});
+
+// Import Rockwell CSV
+router.post('/projects/:projectId/import/rockwell/csv', authenticateToken, upload.single('file'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const projectId = parseInt(req.params.projectId);
+    const file = req.file;
+
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Verify project exists and user owns it
+    const project = await db('projects')
+      .where({ id: projectId, user_id: req.user!.userId })
+      .first();
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const result = await importRockwellCsv(file.buffer, projectId, req.user!.userId);
+    
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    // Log audit event
+    await logAuditEvent({
+      userId: req.user!.userId,
+      action: `Imported ${result.inserted} Rockwell tags from CSV to project: ${project.project_name}`,
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      metadata: { projectId, imported: result.inserted }
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error importing Rockwell CSV:', error);
+    res.status(500).json({ error: 'Failed to import Rockwell CSV' });
+  }
+});
+
+// Import Rockwell L5X
+router.post('/projects/:projectId/import/rockwell/l5x', authenticateToken, upload.single('file'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const projectId = parseInt(req.params.projectId);
+    const file = req.file;
+
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Verify project exists and user owns it
+    const project = await db('projects')
+      .where({ id: projectId, user_id: req.user!.userId })
+      .first();
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const result = await importRockwellL5X(file.buffer, projectId, req.user!.userId);
+    
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    // Log audit event
+    await logAuditEvent({
+      userId: req.user!.userId,
+      action: `Imported ${result.inserted} Rockwell tags from L5X to project: ${project.project_name}`,
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      metadata: { projectId, imported: result.inserted }
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error importing Rockwell L5X:', error);
+    res.status(500).json({ error: 'Failed to import Rockwell L5X' });
+  }
+});
+
+// === Export Endpoints ===
+
+// Export Beckhoff CSV
+router.get('/projects/:projectId/export/beckhoff/csv', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const projectId = parseInt(req.params.projectId);
+    
+    // Verify project exists and user owns it
+    const project = await db('projects')
+      .select('id', 'project_name', 'user_id')
+      .where({ id: projectId, user_id: req.user!.userId })
+      .first();
+    
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const fileName = `${project.project_name || project.id || 'project'}-beckhoff-tags.csv`;
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    
+    await exportBeckhoffCsv(projectId, res, { delimiter: ',' });
+  } catch (error) {
+    console.error('Error exporting Beckhoff CSV:', error);
+    res.status(500).json({ error: 'Failed to export Beckhoff CSV' });
+  }
+});
+
+// Export Beckhoff XML
+router.get('/projects/:projectId/export/beckhoff/xml', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const projectId = parseInt(req.params.projectId);
+    
+    // Verify project exists and user owns it
+    const project = await db('projects')
+      .select('id', 'project_name', 'user_id')
+      .where({ id: projectId, user_id: req.user!.userId })
+      .first();
+    
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const fileName = `${project.project_name || project.id || 'project'}-beckhoff-tags.xml`;
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    
+    await exportBeckhoffXml(projectId, res);
+  } catch (error) {
+    console.error('Error exporting Beckhoff XML:', error);
+    res.status(500).json({ error: 'Failed to export Beckhoff XML' });
+  }
+});
+
+// Export Siemens CSV
+router.get('/projects/:projectId/export/siemens/csv', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const projectId = parseInt(req.params.projectId);
+    
+    // Verify project exists and user owns it
+    const project = await db('projects')
+      .select('id', 'project_name', 'user_id')
+      .where({ id: projectId, user_id: req.user!.userId })
+      .first();
+    
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const fileName = `${project.project_name || project.id || 'project'}-siemens-tags.csv`;
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    
+    await exportSiemensCsv(projectId, res, { delimiter: ';' });
+  } catch (error) {
+    console.error('Error exporting Siemens CSV:', error);
+    res.status(500).json({ error: 'Failed to export Siemens CSV' });
+  }
+});
+
+// Export Siemens XML
+router.get('/projects/:projectId/export/siemens/xml', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const projectId = parseInt(req.params.projectId);
+    
+    // Verify project exists and user owns it
+    const project = await db('projects')
+      .select('id', 'project_name', 'user_id')
+      .where({ id: projectId, user_id: req.user!.userId })
+      .first();
+    
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const fileName = `${project.project_name || project.id || 'project'}-siemens-tags.xml`;
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    
+    await exportSiemensXml(projectId, res);
+  } catch (error) {
+    console.error('Error exporting Siemens XML:', error);
+    res.status(500).json({ error: 'Failed to export Siemens XML' });
+  }
+});
+
+// Export Rockwell CSV
+router.get('/projects/:projectId/export/rockwell/csv', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const projectId = parseInt(req.params.projectId);
+    
+    // Verify project exists and user owns it
+    const project = await db('projects')
+      .select('id', 'project_name', 'user_id')
+      .where({ id: projectId, user_id: req.user!.userId })
+      .first();
+    
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const fileName = `${project.project_name || project.id || 'project'}-rockwell-tags.csv`;
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    
+    await exportRockwellCsv(projectId, res, { delimiter: ',' });
+  } catch (error) {
+    console.error('Error exporting Rockwell CSV:', error);
+    res.status(500).json({ error: 'Failed to export Rockwell CSV' });
+  }
+});
+
+// Export Rockwell L5X
+router.get('/projects/:projectId/export/rockwell/l5x', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const projectId = parseInt(req.params.projectId);
+    
+    // Verify project exists and user owns it
+    const project = await db('projects')
+      .select('id', 'project_name', 'user_id')
+      .where({ id: projectId, user_id: req.user!.userId })
+      .first();
+    
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const fileName = `${project.project_name || project.id || 'project'}-rockwell-tags.L5X`;
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    
+    await exportRockwellL5X(projectId, res);
+  } catch (error) {
+    console.error('Error exporting Rockwell L5X:', error);
+    res.status(500).json({ error: 'Failed to export Rockwell L5X' });
+  }
+});
+
+// Export Beckhoff XLSX
+router.get('/projects/:projectId/export/beckhoff/xlsx', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const projectId = parseInt(req.params.projectId);
+    
+    // Verify project exists and user owns it
+    const project = await db('projects')
+      .select('id', 'project_name', 'user_id')
+      .where({ id: projectId, user_id: req.user!.userId })
+      .first();
+    
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const fileName = `${project.project_name || project.id || 'project'}-beckhoff-tags.xlsx`;
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    
+    await exportBeckhoffXlsx(projectId, res);
+  } catch (error) {
+    console.error('Error exporting Beckhoff XLSX:', error);
+    res.status(500).json({ error: 'Failed to export Beckhoff XLSX' });
+  }
+});
+
+// Export Siemens XLSX
+router.get('/projects/:projectId/export/siemens/xlsx', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const projectId = parseInt(req.params.projectId);
+    
+    // Verify project exists and user owns it
+    const project = await db('projects')
+      .select('id', 'project_name', 'user_id')
+      .where({ id: projectId, user_id: req.user!.userId })
+      .first();
+    
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const fileName = `${project.project_name || project.id || 'project'}-siemens-tags.xlsx`;
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    
+    await exportSiemensXlsx(projectId, res);
+  } catch (error) {
+    console.error('Error exporting Siemens XLSX:', error);
+    res.status(500).json({ error: 'Failed to export Siemens XLSX' });
+  }
+});
+
+// Export Rockwell XLSX
+router.get('/projects/:projectId/export/rockwell/xlsx', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const projectId = parseInt(req.params.projectId);
+    
+    // Verify project exists and user owns it
+    const project = await db('projects')
+      .select('id', 'project_name', 'user_id')
+      .where({ id: projectId, user_id: req.user!.userId })
+      .first();
+    
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const fileName = `${project.project_name || project.id || 'project'}-rockwell-tags.xlsx`;
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    
+    await exportRockwellXlsx(projectId, res);
+  } catch (error) {
+    console.error('Error exporting Rockwell XLSX:', error);
+    res.status(500).json({ error: 'Failed to export Rockwell XLSX' });
   }
 });
 

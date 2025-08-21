@@ -12,7 +12,7 @@ const orgs_new_1 = __importDefault(require("./routes/orgs.new"));
 const projects_new_1 = __importDefault(require("./routes/projects-new"));
 const tags_new_1 = __importDefault(require("./routes/tags-new"));
 const project_versions_new_1 = __importDefault(require("./routes/project_versions_new"));
-// import tagImportRoutes from './routes/tagImport';
+const tagImport_1 = __importDefault(require("./routes/tagImport"));
 const http_1 = __importDefault(require("http"));
 const database_manager_1 = require("./db/database-manager");
 // import { TagSyncService } from './services/tagSyncService';  // Disabled temporarily
@@ -44,6 +44,7 @@ const corsOptions = {
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
+    exposedHeaders: ["Content-Disposition"], // ✅ Expose Content-Disposition header for file downloads
 };
 // ✅ Preflight handler first (before routes/middleware)
 app.use((req, res, next) => {
@@ -52,6 +53,7 @@ app.use((req, res, next) => {
         res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
         res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
         res.header("Access-Control-Allow-Credentials", "true");
+        res.header("Access-Control-Expose-Headers", "Content-Disposition"); // ✅ Expose Content-Disposition
         return res.sendStatus(204);
     }
     next();
@@ -80,7 +82,7 @@ app.use("/api/v1/orgs", orgs_new_1.default);
 app.use("/api/v1/projects", projects_new_1.default);
 app.use("/api/v1/tags", tags_new_1.default);
 // Tag import routes
-// app.use('/api/v1/tags', tagImportRoutes);
+app.use('/api/v1/tags', tagImport_1.default);
 // Register version control routes under projects
 app.use("/api/v1/projects", project_versions_new_1.default);
 // Add a simple test route

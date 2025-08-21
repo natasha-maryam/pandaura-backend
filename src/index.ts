@@ -7,7 +7,7 @@ import orgRoutes from "./routes/orgs.new";
 import projectsRoutes from "./routes/projects-new";
 import tagsRoutes from "./routes/tags-new";
 import projectVersionsRoutes from "./routes/project_versions_new";
-// import tagImportRoutes from './routes/tagImport';
+import tagImportRoutes from './routes/tagImport';
 import http from "http";
 import { DatabaseManager } from "./db/database-manager";
 // import { TagSyncService } from './services/tagSyncService';  // Disabled temporarily
@@ -45,6 +45,7 @@ const corsOptions: CorsOptions = {
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
+  exposedHeaders: ["Content-Disposition"], // ✅ Expose Content-Disposition header for file downloads
 };
 
 // ✅ Preflight handler first (before routes/middleware)
@@ -54,6 +55,7 @@ app.use((req, res, next) => {
     res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
     res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
     res.header("Access-Control-Allow-Credentials", "true");
+    res.header("Access-Control-Expose-Headers", "Content-Disposition"); // ✅ Expose Content-Disposition
     return res.sendStatus(204);
   }
   next();
@@ -92,7 +94,7 @@ app.use("/api/v1/orgs", orgRoutes);
 app.use("/api/v1/projects", projectsRoutes);
 app.use("/api/v1/tags", tagsRoutes);
 // Tag import routes
-// app.use('/api/v1/tags', tagImportRoutes);
+app.use('/api/v1/tags', tagImportRoutes);
 // Register version control routes under projects
 app.use("/api/v1/projects", projectVersionsRoutes);
 
