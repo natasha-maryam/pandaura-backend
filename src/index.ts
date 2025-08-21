@@ -12,6 +12,7 @@ import http from "http";
 import { DatabaseManager } from "./db/database-manager";
 // import { TagSyncService } from './services/tagSyncService';  // Disabled temporarily
 import { WebSocketServer } from "ws";
+require('dotenv').config()
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -27,12 +28,18 @@ const allowedOrigins = [
   "http://127.0.0.1:3000"
 ];
 
+
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin) return callback(null, true); // allow Postman / mobile apps
+      if (!origin) return callback(null, true);
 
-      if (allowedOrigins.includes(origin)) {
+      const hostname = new URL(origin).hostname;
+
+      if (
+        allowedOrigins.includes(origin) ||
+        hostname.endsWith(".vercel.app")
+      ) {
         return callback(null, true);
       }
 
@@ -45,7 +52,7 @@ app.use(
   })
 );
 
-
+app.options("*", cors());
 // Body parsing middleware
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
@@ -77,29 +84,6 @@ app.use("/api/v1/tags", tagsRoutes);
 // Register version control routes under projects
 app.use("/api/v1/projects", projectVersionsRoutes);
 
-// Log registered routes for debugging
-app.once("mount", () => {
-  console.log("\nRegistered Routes:");
-  console.log("=================");
-  console.log("GET     /api/v1/auth/*");
-  console.log("GET     /api/v1/orgs/*");
-  console.log("GET     /api/v1/test/*");
-  console.log("GET     /api/v1/projects/*");
-  console.log("GET     /api/v1/tags/*");
-  console.log("GET     /api/v1/versions/projects/:projectId/versions");
-  console.log(
-    "GET     /api/v1/versions/projects/:projectId/version/:versionNumber"
-  );
-  console.log("POST    /api/v1/versions/projects/:projectId/version");
-  console.log(
-    "POST    /api/v1/versions/projects/:projectId/version/:versionNumber/rollback"
-  );
-  console.log("POST    /api/v1/versions/projects/:projectId/auto-save");
-  console.log("GET     /api/v1/versions/projects/:projectId/auto-save");
-  console.log("GET     /api/v1/versions/projects/:projectId/audit");
-  console.log("POST    /api/v1/versions/projects/:projectId/cleanup");
-  console.log("=================\n");
-});
 
 // Add a simple test route
 app.get("/api/v1/simple-test", (req, res) => {

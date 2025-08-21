@@ -17,31 +17,34 @@ const http_1 = __importDefault(require("http"));
 const database_manager_1 = require("./db/database-manager");
 // import { TagSyncService } from './services/tagSyncService';  // Disabled temporarily
 const ws_1 = require("ws");
+require('dotenv').config();
 const app = (0, express_1.default)();
 const port = process.env.PORT || 5000;
 const server = http_1.default.createServer(app);
 // Security middleware
 app.use((0, helmet_1.default)());
+// Configure CORS to handle multiple origins
 const allowedOrigins = [
-    "https://pandaura.vercel.app", // production frontend
-    "http://localhost:3000", // local dev
+    "https://pandaura.vercel.app", // your frontend
+    "http://localhost:5173", // local dev
     "http://127.0.0.1:3000"
 ];
 app.use((0, cors_1.default)({
     origin: (origin, callback) => {
         if (!origin)
-            return callback(null, true); // allow Postman / mobile apps
-        if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        const hostname = new URL(origin).hostname;
+        if (allowedOrigins.includes(origin) ||
+            hostname.endsWith(".vercel.app")) {
             return callback(null, true);
         }
-        console.log("❌ Blocked by CORS:", origin);
+        console.log("❌ CORS blocked origin:", origin);
         callback(new Error("Not allowed by CORS"));
     },
-    credentials: true, // allow cookies/auth headers
+    credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
 }));
-// 👇 important: handle preflight requests
 app.options("*", (0, cors_1.default)());
 // Body parsing middleware
 app.use(express_1.default.json({ limit: "10mb" }));
@@ -66,25 +69,6 @@ app.use("/api/v1/tags", tags_new_1.default);
 // app.use('/api/v1/tags', tagImportRoutes);
 // Register version control routes under projects
 app.use("/api/v1/projects", project_versions_new_1.default);
-// Log registered routes for debugging
-app.once("mount", () => {
-    console.log("\nRegistered Routes:");
-    console.log("=================");
-    console.log("GET     /api/v1/auth/*");
-    console.log("GET     /api/v1/orgs/*");
-    console.log("GET     /api/v1/test/*");
-    console.log("GET     /api/v1/projects/*");
-    console.log("GET     /api/v1/tags/*");
-    console.log("GET     /api/v1/versions/projects/:projectId/versions");
-    console.log("GET     /api/v1/versions/projects/:projectId/version/:versionNumber");
-    console.log("POST    /api/v1/versions/projects/:projectId/version");
-    console.log("POST    /api/v1/versions/projects/:projectId/version/:versionNumber/rollback");
-    console.log("POST    /api/v1/versions/projects/:projectId/auto-save");
-    console.log("GET     /api/v1/versions/projects/:projectId/auto-save");
-    console.log("GET     /api/v1/versions/projects/:projectId/audit");
-    console.log("POST    /api/v1/versions/projects/:projectId/cleanup");
-    console.log("=================\n");
-});
 // Add a simple test route
 app.get("/api/v1/simple-test", (req, res) => {
     console.log("Simple test route hit!");

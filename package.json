@@ -27,8 +27,7 @@
     "db:check": "node scripts/check-db.js",
     "db:health": "npx ts-node -e \"import('./src/db/database-manager').then(({DatabaseManager}) => DatabaseManager.healthCheck().then(console.log))\"",
     "db:test": "npx ts-node -e \"import('./src/db/database-manager').then(({DatabaseManager}) => DatabaseManager.testConnection())\"",
-    "db:info": "npx ts-node -e \"import('./src/db/database-manager').then(({DatabaseManager}) => DatabaseManager.getConnectionInfo().then(console.log))\"",
-    "preinstall": "apt-get update && apt-get install -y python3 make g++"
+    "db:info": "npx ts-node -e \"import('./src/db/database-manager').then(({DatabaseManager}) => DatabaseManager.getConnectionInfo().then(console.log))\""
   },
   "repository": {
     "type": "git",
@@ -53,7 +52,7 @@
     "cross-env": "^10.0.0",
     "csv-parse": "^6.1.0",
     "dotenv": "^17.2.1",
-    "express": "^5.1.0",
+    "express": "^4.18.2",
     "fast-csv": "^5.0.5",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
@@ -71,7 +70,7 @@
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
-    "@types/express": "^5.0.3",
+    "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.5",
     "@types/node": "^24.2.1",
     "@types/pg": "^8.15.5",
