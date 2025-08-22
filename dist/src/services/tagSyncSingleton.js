@@ -1,9 +1,11 @@
 "use strict";
-// import { TagSyncService } from './tagSyncService';
-// let instance: TagSyncService | null = null;
-// export function setTagSyncService(svc: TagSyncService) {
-//   instance = svc;
-// }
-// export function getTagSyncService(): TagSyncService | null {
-//   return instance;
-// }
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.setTagSyncService = setTagSyncService;
+exports.getTagSyncService = getTagSyncService;
+let instance = null;
+function setTagSyncService(svc) {
+    instance = svc;
+}
+function getTagSyncService() {
+    return instance;
+}

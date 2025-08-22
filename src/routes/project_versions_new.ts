@@ -74,7 +74,7 @@ router.post('/:projectId/create-version', authenticateToken, authorizeProjectAcc
   try {
     const projectId = parseInt(req.params.projectId, 10);
     const userId = req.user?.userId!;
-    const { message, isAuto = false } = req.body;
+    const { state, message, isAuto = false } = req.body;
 
     if (!userId) {
       return res.status(401).json({ error: 'User not authenticated' });
@@ -97,16 +97,31 @@ router.post('/:projectId/create-version', authenticateToken, authorizeProjectAcc
       return res.status(404).json({ error: 'Project not found' });
     }
 
+    // Get all tags for this project
+    const tags = await db('tags')
+      .where({ project_id: projectId })
+      .select('*');
+
+    // Create comprehensive version data including Logic Studio state and tags
+    const versionData = {
+      projectMetadata: project,
+      timestamp: Date.now(),
+      logicStudioCode: state?.code || state?.content || '', // Store Logic Studio code
+      tags: tags, // Store all project tags at the time of version save
+      moduleStates: {
+        LogicStudio: state || {}
+      },
+      state: state || {},  // Store the complete Logic Studio state
+      autosaveState: state && state.module === 'LogicStudio' ? state : null,  // Also store as autosave state for compatibility
+    };
+
     // Create version record
     const [version] = await db('project_versions')
       .insert({
         project_id: projectId,
         user_id: userId,
         version_number: nextVersionNumber,
-        data: JSON.stringify({
-          projectMetadata: project,
-          timestamp: Date.now()
-        }),
+        data: JSON.stringify(versionData),
         message: message || `Version ${nextVersionNumber}`,
         is_auto: isAuto,
         created_at: new Date().toISOString()
@@ -128,7 +143,7 @@ router.post('/:projectId/create-version', authenticateToken, authorizeProjectAcc
       userAgent: req.get('User-Agent')
     });
 
-    res.json({ success: true, version: versionNumber });
+    res.json({ success: true, versionId: versionNumber });
   } catch (error) {
     console.error('Error saving project version:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -152,7 +167,20 @@ router.get('/:projectId/version/:versionNumber', authenticateToken, authorizePro
       return res.status(404).json({ error: 'Version not found' });
     }
 
-    res.json({ success: true, data: version.data });
+    // Ensure version.data is properly handled - it's already an object from JSONB
+    const versionData = version.data;
+
+    res.json({ 
+      success: true, 
+      data: versionData,
+      version: {
+        id: version.id,
+        version_number: version.version_number,
+        message: version.message,
+        created_at: version.created_at,
+        is_auto: version.is_auto
+      }
+    });
   } catch (error) {
     console.error('Error fetching project version data:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -174,11 +202,90 @@ router.post('/:projectId/version/:versionNumber/rollback', authenticateToken, au
       return res.status(400).json({ error: 'Invalid version number' });
     }
 
-    // For now, implement basic rollback (just return success without actual rollback)
-    // TODO: Implement proper rollback functionality
-    res.status(501).json({ 
-      error: 'Rollback functionality not yet implemented',
-      message: 'This feature will be available in a future update' 
+    // Get the target version to rollback to
+    const targetVersion = await db('project_versions')
+      .where({ project_id: projectId, version_number: versionNumber })
+      .first();
+
+    if (!targetVersion) {
+      return res.status(404).json({ error: 'Version not found' });
+    }
+
+    // Create a new version containing the rollback state
+    const latestVersion = await db('project_versions')
+      .where('project_id', projectId)
+      .max('version_number as max_version')
+      .first();
+
+    const nextVersionNumber = (latestVersion?.max_version || 0) + 1;
+
+    // Get the target version data to rollback to (data is already a JS object from JSONB column)
+    const rollbackData = targetVersion.data;
+    
+    // Create a new version record with rollback data
+    const [newVersion] = await db('project_versions')
+      .insert({
+        project_id: projectId,
+        user_id: userId,
+        version_number: nextVersionNumber,
+        data: {
+          ...rollbackData,
+          rollbackInfo: {
+            sourceVersion: versionNumber,
+            rollbackTimestamp: Date.now(),
+            originalTimestamp: rollbackData.timestamp
+          }
+        },
+        message: `Rollback to version ${versionNumber}`,
+        is_auto: false,
+        created_at: new Date().toISOString()
+      })
+      .returning('*');
+
+    // Restore the tags from the rollback version
+    if (rollbackData.tags && Array.isArray(rollbackData.tags)) {
+      // First, delete existing tags for this project
+      await db('tags').where({ project_id: projectId }).del();
+      
+      // Then insert the tags from the rollback version
+      if (rollbackData.tags.length > 0) {
+        const tagsToInsert = rollbackData.tags.map((tag: any) => ({
+          project_id: projectId,
+          name: tag.name,
+          type: tag.type,
+          data_type: tag.data_type,
+          address: tag.address,
+          default_value: tag.default_value,
+          vendor: tag.vendor,
+          scope: tag.scope
+        }));
+        
+        await db('tags').insert(tagsToInsert);
+      }
+    }
+
+    // Log audit event
+    await logAuditEvent({
+      userId,
+      action: 'rollback_version',
+      metadata: { 
+        projectId, 
+        targetVersion: versionNumber,
+        newVersion: nextVersionNumber,
+        tagsRestored: rollbackData.tags?.length || 0
+      },
+      ip: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+
+    res.json({ 
+      success: true, 
+      rolledBackTo: versionNumber,
+      newVersion: nextVersionNumber,
+      logicStudioCode: rollbackData.logicStudioCode || '',
+      tags: rollbackData.tags || [],
+      state: rollbackData.state || {},
+      message: `Successfully rolled back to version ${versionNumber}`
     });
   } catch (error) {
     console.error('Error during rollback:', error);

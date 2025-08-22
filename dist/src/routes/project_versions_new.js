@@ -66,7 +66,7 @@ router.post('/:projectId/create-version', authMiddleware_1.authenticateToken, au
     try {
         const projectId = parseInt(req.params.projectId, 10);
         const userId = req.user?.userId;
-        const { message, isAuto = false } = req.body;
+        const { state, message, isAuto = false } = req.body;
         if (!userId) {
             return res.status(401).json({ error: 'User not authenticated' });
         }
@@ -83,16 +83,29 @@ router.post('/:projectId/create-version', authMiddleware_1.authenticateToken, au
         if (!project) {
             return res.status(404).json({ error: 'Project not found' });
         }
+        // Get all tags for this project
+        const tags = await (0, knex_1.default)('tags')
+            .where({ project_id: projectId })
+            .select('*');
+        // Create comprehensive version data including Logic Studio state and tags
+        const versionData = {
+            projectMetadata: project,
+            timestamp: Date.now(),
+            logicStudioCode: state?.code || state?.content || '', // Store Logic Studio code
+            tags: tags, // Store all project tags at the time of version save
+            moduleStates: {
+                LogicStudio: state || {}
+            },
+            state: state || {}, // Store the complete Logic Studio state
+            autosaveState: state && state.module === 'LogicStudio' ? state : null, // Also store as autosave state for compatibility
+        };
         // Create version record
         const [version] = await (0, knex_1.default)('project_versions')
             .insert({
             project_id: projectId,
             user_id: userId,
             version_number: nextVersionNumber,
-            data: JSON.stringify({
-                projectMetadata: project,
-                timestamp: Date.now()
-            }),
+            data: JSON.stringify(versionData),
             message: message || `Version ${nextVersionNumber}`,
             is_auto: isAuto,
             created_at: new Date().toISOString()
@@ -111,7 +124,7 @@ router.post('/:projectId/create-version', authMiddleware_1.authenticateToken, au
             ip: req.ip,
             userAgent: req.get('User-Agent')
         });
-        res.json({ success: true, version: versionNumber });
+        res.json({ success: true, versionId: versionNumber });
     }
     catch (error) {
         console.error('Error saving project version:', error);
@@ -151,11 +164,80 @@ router.post('/:projectId/version/:versionNumber/rollback', authMiddleware_1.auth
         if (isNaN(versionNumber) || versionNumber < 1) {
             return res.status(400).json({ error: 'Invalid version number' });
         }
-        // For now, implement basic rollback (just return success without actual rollback)
-        // TODO: Implement proper rollback functionality
-        res.status(501).json({
-            error: 'Rollback functionality not yet implemented',
-            message: 'This feature will be available in a future update'
+        // Get the target version to rollback to
+        const targetVersion = await (0, knex_1.default)('project_versions')
+            .where({ project_id: projectId, version_number: versionNumber })
+            .first();
+        if (!targetVersion) {
+            return res.status(404).json({ error: 'Version not found' });
+        }
+        // Create a new version containing the rollback state
+        const latestVersion = await (0, knex_1.default)('project_versions')
+            .where('project_id', projectId)
+            .max('version_number as max_version')
+            .first();
+        const nextVersionNumber = (latestVersion?.max_version || 0) + 1;
+        // Get the target version data to rollback to (data is already a JS object from JSONB column)
+        const rollbackData = targetVersion.data;
+        // Create a new version record with rollback data
+        const [newVersion] = await (0, knex_1.default)('project_versions')
+            .insert({
+            project_id: projectId,
+            user_id: userId,
+            version_number: nextVersionNumber,
+            data: {
+                ...rollbackData,
+                rollbackInfo: {
+                    sourceVersion: versionNumber,
+                    rollbackTimestamp: Date.now(),
+                    originalTimestamp: rollbackData.timestamp
+                }
+            },
+            message: `Rollback to version ${versionNumber}`,
+            is_auto: false,
+            created_at: new Date().toISOString()
+        })
+            .returning('*');
+        // Restore the tags from the rollback version
+        if (rollbackData.tags && Array.isArray(rollbackData.tags)) {
+            // First, delete existing tags for this project
+            await (0, knex_1.default)('tags').where({ project_id: projectId }).del();
+            // Then insert the tags from the rollback version
+            if (rollbackData.tags.length > 0) {
+                const tagsToInsert = rollbackData.tags.map((tag) => ({
+                    project_id: projectId,
+                    name: tag.name,
+                    type: tag.type,
+                    data_type: tag.data_type,
+                    address: tag.address,
+                    default_value: tag.default_value,
+                    vendor: tag.vendor,
+                    scope: tag.scope
+                }));
+                await (0, knex_1.default)('tags').insert(tagsToInsert);
+            }
+        }
+        // Log audit event
+        await (0, auditLogger_1.logAuditEvent)({
+            userId,
+            action: 'rollback_version',
+            metadata: {
+                projectId,
+                targetVersion: versionNumber,
+                newVersion: nextVersionNumber,
+                tagsRestored: rollbackData.tags?.length || 0
+            },
+            ip: req.ip,
+            userAgent: req.get('User-Agent')
+        });
+        res.json({
+            success: true,
+            rolledBackTo: versionNumber,
+            newVersion: nextVersionNumber,
+            logicStudioCode: rollbackData.logicStudioCode || '',
+            tags: rollbackData.tags || [],
+            state: rollbackData.state || {},
+            message: `Successfully rolled back to version ${versionNumber}`
         });
     }
     catch (error) {

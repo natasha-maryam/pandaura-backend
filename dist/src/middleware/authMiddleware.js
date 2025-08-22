@@ -17,17 +17,18 @@ function authenticateToken(req, res, next) {
         return next();
     const authHeader = req.headers['authorization'];
     const headerToken = authHeader && authHeader.split(' ')[1];
-    const cookieToken = req.cookies?.authToken;
+    const cookieToken = req.cookies?.pandaura_auth_token; // Fixed: use correct cookie name
     const token = headerToken || cookieToken;
-    // console.log('🔐 Auth middleware called:', {
-    //   hasAuthHeader: !!authHeader,
-    //   hasHeaderToken: !!headerToken,
-    //   hasCookieToken: !!cookieToken,
-    //   hasToken: !!token,
-    //   tokenPrefix: token ? `${token.substring(0, 10)}...` : 'none',
-    //   url: req.url,
-    //   method: req.method
-    // });
+    console.log('🔐 Auth middleware called:', {
+        hasAuthHeader: !!authHeader,
+        hasHeaderToken: !!headerToken,
+        hasCookieToken: !!cookieToken,
+        hasToken: !!token,
+        tokenPrefix: token ? `${token.substring(0, 10)}...` : 'none',
+        url: req.url,
+        method: req.method,
+        cookieNames: Object.keys(req.cookies || {})
+    });
     if (!token) {
         console.log('❌ No token provided in header or cookie');
         return res.status(401).json({ error: 'No token provided' });

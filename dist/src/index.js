@@ -17,18 +17,13 @@ const http_1 = __importDefault(require("http"));
 const database_manager_1 = require("./db/database-manager");
 // Import and initialize TagSyncService
 const tagSyncService_1 = require("./services/tagSyncService");
+const tagSyncSingleton_1 = require("./services/tagSyncSingleton");
 const ws_1 = require("ws");
 require('dotenv').config();
 const app = (0, express_1.default)();
 const port = process.env.PORT || 5000;
 const server = http_1.default.createServer(app);
-const allowedOrigins = [
-    "https://pandaura.vercel.app", // your frontend
-    "http://localhost:5173", // local dev (vite default)
-    "http://localhost:5174", // local dev (vite fallback)
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:5174"
-];
+const allowedOrigins = ["http://localhost:5173", "https://pandaura.vercel.app"];
 const corsOptions = {
     origin: (origin, callback) => {
         // ✅ Always allow OPTIONS preflight without origin check
@@ -150,6 +145,9 @@ app.get("/", (req, res) => {
         environment: process.env.NODE_ENV || "development",
     });
 });
+// app.get("/", (req, res) => {
+//   res.send("🚀 Pandaura Backend is running!");
+// });
 // CORS debug endpoint
 app.get("/api/v1/cors-test", (req, res) => {
     res.json({
@@ -201,7 +199,8 @@ const wss = new ws_1.WebSocketServer({
     },
 });
 // Pass WebSocket server to your TagSyncService
-new tagSyncService_1.TagSyncService(wss);
+const tagSyncService = new tagSyncService_1.TagSyncService(wss);
+(0, tagSyncSingleton_1.setTagSyncService)(tagSyncService);
 // Startup function with database checks
 async function startServer() {
     try {

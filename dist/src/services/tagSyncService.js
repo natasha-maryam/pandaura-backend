@@ -133,16 +133,22 @@ class TagSyncService {
             this.sendError(ws, 'Project ID required for subscription');
             return;
         }
+        console.log(`🔍 DEBUG: Client subscribing to project ${message.projectId}`);
+        console.log(`🔍 DEBUG: Client user ID: ${ws.user?.userId || 'unknown'}`);
         ws.projectId = message.projectId;
         if (!this.clients.has(message.projectId)) {
             this.clients.set(message.projectId, new Set());
+            console.log(`🔍 DEBUG: Created new client set for project ${message.projectId}`);
         }
         this.clients.get(message.projectId).add(ws);
+        console.log(`🔍 DEBUG: Added client to project ${message.projectId}, total clients: ${this.clients.get(message.projectId).size}`);
+        console.log(`🔍 DEBUG: All subscribed projects:`, Array.from(this.clients.keys()));
         // Send current tags for the project
         try {
             const tags = await (0, knex_1.default)('tags')
                 .where('project_id', parseInt(message.projectId))
                 .orderBy('name');
+            console.log(`🔍 DEBUG: Sending ${tags.length} existing tags to new subscriber`);
             this.sendResponse(ws, {
                 type: 'tags_updated',
                 success: true,
@@ -227,6 +233,8 @@ class TagSyncService {
             }
             const projectVendor = project.target_plc_vendor || 'rockwell'; // Default to rockwell
             console.log(`🔄 Starting tag sync for project ${message.projectId}, using project vendor: ${projectVendor}, syncId: ${syncId || 'direct'}`);
+            console.log(`🔍 DEBUG: ST Code received:`, message.stCode);
+            console.log(`🔍 DEBUG: ST Code length:`, message.stCode.length);
             // Parse variables from ST code using project vendor
             const parsedTags = (0, stParser_1.parseSTVariablesDetailed)(message.stCode, projectVendor);
             console.log(`📝 Parsed ${parsedTags.length} tags from ST code`);
@@ -257,6 +265,8 @@ class TagSyncService {
                 .orderBy('name');
             const duration = Date.now() - startTime;
             console.log(`✅ Tag sync completed in ${duration}ms for project ${message.projectId}`);
+            console.log(`🔍 DEBUG: About to broadcast tags_updated to project ${message.projectId}`);
+            console.log(`🔍 DEBUG: Broadcasting ${updatedTags.length} tags to all subscribers`);
             // Broadcast to all subscribers of this project
             this.broadcastToProject(message.projectId, {
                 type: 'tags_updated',
@@ -307,6 +317,12 @@ class TagSyncService {
             throw new Error(`Access denied to project ${projectId} for user ${userId}`);
         }
         const projectIdNum = parseInt(projectId);
+        // Get project vendor for new tags
+        const project = await (0, knex_1.default)('projects')
+            .where({ id: projectIdNum, user_id: userId })
+            .first();
+        const projectVendor = project?.target_plc_vendor || 'rockwell';
+        console.log(`🔍 Project vendor for new tags: ${projectVendor}`);
         // Fetch all existing tags for the project once using Knex
         const existingTags = await (0, knex_1.default)('tags')
             .where('project_id', projectIdNum)
@@ -322,12 +338,10 @@ class TagSyncService {
                     const normalizedDataTypeForUpdate = rawDataTypeForUpdate?.toUpperCase() || 'BOOL';
                     const rawScopeForUpdate = tag.Scope || tag.scope || 'local';
                     const normalizedScopeForUpdate = rawScopeForUpdate.toLowerCase();
-                    const rawVendorForUpdate = tag.Vendor || tag.vendor || 'rockwell';
-                    const normalizedVendorForUpdate = rawVendorForUpdate.toLowerCase();
                     console.log(`🔍 TagSync Update: Raw data type: "${rawDataTypeForUpdate}" → Normalized: "${normalizedDataTypeForUpdate}"`);
                     console.log(`🔍 TagSync Update: Raw scope: "${rawScopeForUpdate}" → Normalized: "${normalizedScopeForUpdate}"`);
-                    console.log(`🔍 TagSync Update: Raw vendor: "${rawVendorForUpdate}" → Normalized: "${normalizedVendorForUpdate}"`);
-                    // Update existing tag using Knex
+                    console.log(`🔍 TagSync Update: Preserving existing vendor: "${existingTag.vendor}"`);
+                    // Update existing tag using Knex - but preserve the existing vendor
                     await (0, knex_1.default)('tags')
                         .where('id', existingTag.id)
                         .update({
@@ -335,23 +349,21 @@ class TagSyncService {
                         data_type: normalizedDataTypeForUpdate,
                         address: tag.Address || tag.address,
                         default_value: tag.DefaultValue || tag.defaultValue,
-                        vendor: normalizedVendorForUpdate,
+                        // vendor: normalizedVendorForUpdate, // REMOVED: Don't change vendor of existing tags
                         scope: normalizedScopeForUpdate,
                         description: tag.Description || tag.description || '',
                         updated_at: new Date().toISOString()
                     });
                 }
                 else {
-                    // Create new tag with normalized values
+                    // Create new tag with normalized values and project vendor
                     const rawDataType = tag.DataType || tag.dataType;
                     const normalizedDataType = rawDataType?.toUpperCase() || 'BOOL';
                     const rawScope = tag.Scope || tag.scope || 'local';
                     const normalizedScope = rawScope.toLowerCase();
-                    const rawVendor = tag.Vendor || tag.vendor || 'rockwell';
-                    const normalizedVendor = rawVendor.toLowerCase();
                     console.log(`🔍 TagSync Create: Raw data type: "${rawDataType}" → Normalized: "${normalizedDataType}"`);
                     console.log(`🔍 TagSync Create: Raw scope: "${rawScope}" → Normalized: "${normalizedScope}"`);
-                    console.log(`🔍 TagSync Create: Raw vendor: "${rawVendor}" → Normalized: "${normalizedVendor}"`);
+                    console.log(`🔍 TagSync Create: Using project vendor: "${projectVendor}"`);
                     const tagData = {
                         project_id: parseInt(projectId),
                         user_id: String(userId),
@@ -361,7 +373,7 @@ class TagSyncService {
                         data_type: normalizedDataType,
                         address: tag.Address || tag.address,
                         default_value: tag.DefaultValue || tag.defaultValue,
-                        vendor: normalizedVendor,
+                        vendor: projectVendor, // Use project vendor for new tags
                         scope: normalizedScope,
                         tag_type: 'memory', // default, adjust as needed
                         is_ai_generated: false,
@@ -385,6 +397,7 @@ class TagSyncService {
      */
     handleDisconnection(ws) {
         console.log(`🔌 WebSocket client disconnected: ${ws.user?.username || 'unknown'}`);
+        console.log(`🔍 DEBUG: Client was subscribed to project: ${ws.projectId || 'none'}`);
         // Clear any pending debounce timer
         if (ws.debounceTimer) {
             clearTimeout(ws.debounceTimer);
@@ -395,6 +408,7 @@ class TagSyncService {
             const projectClients = this.clients.get(ws.projectId);
             if (projectClients) {
                 projectClients.delete(ws);
+                console.log(`🔍 DEBUG: Removed client from project ${ws.projectId}, remaining clients: ${projectClients.size}`);
                 if (projectClients.size === 0) {
                     this.clients.delete(ws.projectId);
                     console.log(`📂 No more clients for project ${ws.projectId}, removed from active projects`);
@@ -427,13 +441,33 @@ class TagSyncService {
      */
     broadcastToProject(projectId, response) {
         const projectClients = this.clients.get(projectId);
+        console.log(`🔍 DEBUG: Broadcasting to project ${projectId}`);
+        console.log(`🔍 DEBUG: Subscribed clients count: ${projectClients?.size || 0}`);
+        console.log(`🔍 DEBUG: Message type: ${response.type}`);
+        console.log(`🔍 DEBUG: All project subscriptions:`, Array.from(this.clients.keys()));
         if (projectClients) {
             const message = JSON.stringify(response);
+            console.log(`📡 Broadcasting to ${projectClients.size} clients for project ${projectId}`);
+            let sentCount = 0;
             projectClients.forEach(client => {
                 if (client.readyState === ws_1.WebSocket.OPEN) {
-                    client.send(message);
+                    try {
+                        client.send(message);
+                        sentCount++;
+                        console.log(`✅ Message sent to client (${sentCount}/${projectClients.size})`);
+                    }
+                    catch (error) {
+                        console.error(`❌ Failed to send message to client:`, error);
+                    }
+                }
+                else {
+                    console.log(`⚠️ Client WebSocket not open (state: ${client.readyState})`);
                 }
             });
+            console.log(`📡 Successfully broadcast to ${sentCount}/${projectClients.size} clients`);
+        }
+        else {
+            console.log(`📡 No clients subscribed to project ${projectId}`);
         }
     }
     /**
