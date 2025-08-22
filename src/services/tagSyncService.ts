@@ -295,6 +295,8 @@ export class TagSyncService {
 
       const projectVendor = project.target_plc_vendor || 'rockwell'; // Default to rockwell
       console.log(`🔄 Starting tag sync for project ${message.projectId}, using project vendor: ${projectVendor}, syncId: ${syncId || 'direct'}`);
+      console.log(`🔍 DEBUG: ST Code received:`, message.stCode);
+      console.log(`🔍 DEBUG: ST Code length:`, message.stCode.length);
 
       // Parse variables from ST code using project vendor
       const parsedTags = parseSTVariablesDetailed(message.stCode, projectVendor);
