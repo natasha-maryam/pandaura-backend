@@ -102,8 +102,15 @@ router.post('/:projectId/create-version', authenticateToken, authorizeProjectAcc
       .where({ project_id: projectId })
       .select('*');
 
+    // Get project vendor for snapshot
+    const projectVendor = project.target_plc_vendor || 'siemens';
+
+    // Always get current Logic Studio state for comprehensive snapshots
+    let currentLogicStudio = await db('logic_studio')
+      .where({ project_id: projectId })
+      .first();
+
     // Update Logic Studio table if state is provided (for Logic Studio versions)
-    let logicStudio;
     if (state && state.module === 'LogicStudio') {
       const logicStudioData = {
         project_id: projectId,
@@ -127,34 +134,38 @@ router.post('/:projectId/create-version', authenticateToken, authorizeProjectAcc
         .onConflict('project_id')
         .merge(logicStudioData);
 
-      logicStudio = logicStudioData;
-    } else {
-      // Get current Logic Studio state if not a Logic Studio version
-      logicStudio = await db('logic_studio')
-        .where({ project_id: projectId })
-        .first();
+      currentLogicStudio = logicStudioData; // Update current state
     }
 
-    // Get project vendor for snapshot
-    const projectVendor = project.target_plc_vendor || 'siemens';
-
-    // Create comprehensive version data including Logic Studio state and tags
+    // Create comprehensive version data including current Logic Studio state and tags
     const versionData = {
       projectMetadata: project,
       timestamp: Date.now(),
-      logic: logicStudio ? {
-        code: logicStudio.code,
-        ai_prompt: logicStudio.ai_prompt,
+      logic: currentLogicStudio ? {
+        code: currentLogicStudio.code,
+        ai_prompt: currentLogicStudio.ai_prompt,
         vendor: projectVendor, // Use project vendor instead of logic studio vendor
-        ui_state: logicStudio.ui_state
+        ui_state: currentLogicStudio.ui_state
       } : null,
-      logicStudioCode: state?.editorCode || state?.code || logicStudio?.code || '', // Store Logic Studio code
+      logicStudioCode: state?.editorCode || state?.code || currentLogicStudio?.code || '', // Store Logic Studio code
       tags: tags, // Store all project tags at the time of version save
       moduleStates: {
-        LogicStudio: state || {}
+        LogicStudio: state || {
+          editorCode: currentLogicStudio?.code || '',
+          prompt: currentLogicStudio?.ai_prompt || '',
+          module: 'LogicStudio'
+        }
       },
-      state: state || {},  // Store the complete Logic Studio state
-      autosaveState: state && state.module === 'LogicStudio' ? state : null,  // Also store as autosave state for compatibility
+      state: state || {
+        editorCode: currentLogicStudio?.code || '',
+        prompt: currentLogicStudio?.ai_prompt || '',
+        module: 'LogicStudio'
+      },  // Store the complete Logic Studio state
+      autosaveState: state && state.module === 'LogicStudio' ? state : {
+        editorCode: currentLogicStudio?.code || '',
+        prompt: currentLogicStudio?.ai_prompt || '',
+        module: 'LogicStudio'
+      },  // Always store autosave state for compatibility
     };
 
     // Create version record
@@ -208,19 +219,28 @@ router.get('/:projectId/version/:versionNumber', authenticateToken, authorizePro
     const projectId = parseInt(req.params.projectId, 10);
     const versionNumber = parseInt(req.params.versionNumber, 10);
 
+    console.log(`GET version endpoint called for project ${projectId}, version ${versionNumber}`);
+
     if (isNaN(versionNumber) || versionNumber < 1) {
+      console.log('Invalid version number:', versionNumber);
       return res.status(400).json({ error: 'Invalid version number' });
     }
 
+    console.log('Searching for version in database...');
     const version = await db('project_versions')
       .where({ project_id: projectId, version_number: versionNumber })
       .first();
+    
+    console.log('Database query result:', version ? 'Found' : 'Not found');
+    
     if (!version) {
+      console.log('Version not found in database');
       return res.status(404).json({ error: 'Version not found' });
     }
 
     // Ensure version.data is properly handled - it's already an object from JSONB
     const versionData = version.data;
+    console.log('Returning version data with keys:', Object.keys(versionData || {}));
 
     res.json({ 
       success: true, 
