@@ -87,27 +87,65 @@ router.post('/:projectId/create-version', authMiddleware_1.authenticateToken, au
         const tags = await (0, knex_1.default)('tags')
             .where({ project_id: projectId })
             .select('*');
-        // Get current Logic Studio state
-        const logicStudio = await (0, knex_1.default)('logic_studio')
+        // Get project vendor for snapshot
+        const projectVendor = project.target_plc_vendor || 'siemens';
+        // Always get current Logic Studio state for comprehensive snapshots
+        let currentLogicStudio = await (0, knex_1.default)('logic_studio')
             .where({ project_id: projectId })
             .first();
-        // Create comprehensive version data including Logic Studio state and tags
+        // Update Logic Studio table if state is provided (for Logic Studio versions)
+        if (state && state.module === 'LogicStudio') {
+            const logicStudioData = {
+                project_id: projectId,
+                user_id: userId,
+                code: state.editorCode || '',
+                ai_prompt: state.prompt || '',
+                version_id: null, // Will be updated after version is created
+                ui_state: {
+                    showPendingChanges: state.showPendingChanges,
+                    showAISuggestions: state.showAISuggestions,
+                    vendorContextEnabled: state.vendorContextEnabled,
+                    isCollapsed: state.isCollapsed,
+                    collapseLevel: state.collapseLevel
+                },
+                updated_at: new Date().toISOString()
+            };
+            // Upsert the logic studio data
+            await (0, knex_1.default)('logic_studio')
+                .insert(logicStudioData)
+                .onConflict('project_id')
+                .merge(logicStudioData);
+            currentLogicStudio = logicStudioData; // Update current state
+        }
+        // Create comprehensive version data including current Logic Studio state and tags
         const versionData = {
             projectMetadata: project,
             timestamp: Date.now(),
-            logic: logicStudio ? {
-                code: logicStudio.code,
-                ai_prompt: logicStudio.ai_prompt,
-                vendor: logicStudio.vendor,
-                ui_state: logicStudio.ui_state
+            logic: currentLogicStudio ? {
+                code: currentLogicStudio.code,
+                ai_prompt: currentLogicStudio.ai_prompt,
+                vendor: projectVendor, // Use project vendor instead of logic studio vendor
+                ui_state: currentLogicStudio.ui_state
             } : null,
-            logicStudioCode: state?.editorCode || state?.code || logicStudio?.code || '', // Store Logic Studio code
+            logicStudioCode: state?.editorCode || state?.code || currentLogicStudio?.code || '', // Store Logic Studio code
             tags: tags, // Store all project tags at the time of version save
             moduleStates: {
-                LogicStudio: state || {}
+                LogicStudio: state || {
+                    editorCode: currentLogicStudio?.code || '',
+                    prompt: currentLogicStudio?.ai_prompt || '',
+                    module: 'LogicStudio'
+                }
             },
-            state: state || {}, // Store the complete Logic Studio state
-            autosaveState: state && state.module === 'LogicStudio' ? state : null, // Also store as autosave state for compatibility
+            state: state || {
+                editorCode: currentLogicStudio?.code || '',
+                prompt: currentLogicStudio?.ai_prompt || '',
+                module: 'LogicStudio'
+            }, // Store the complete Logic Studio state
+            autosaveState: state && state.module === 'LogicStudio' ? state : {
+                editorCode: currentLogicStudio?.code || '',
+                prompt: currentLogicStudio?.ai_prompt || '',
+                module: 'LogicStudio'
+            }, // Always store autosave state for compatibility
         };
         // Create version record
         const [version] = await (0, knex_1.default)('project_versions')
@@ -122,6 +160,15 @@ router.post('/:projectId/create-version', authMiddleware_1.authenticateToken, au
         })
             .returning('*');
         const versionNumber = nextVersionNumber;
+        // Update Logic Studio with the version_id if this was a Logic Studio version
+        if (state && state.module === 'LogicStudio') {
+            await (0, knex_1.default)('logic_studio')
+                .where({ project_id: projectId })
+                .update({
+                version_id: version.id,
+                updated_at: new Date().toISOString()
+            });
+        }
         // Log audit event
         await (0, auditLogger_1.logAuditEvent)({
             userId,
@@ -146,17 +193,23 @@ router.get('/:projectId/version/:versionNumber', authMiddleware_1.authenticateTo
     try {
         const projectId = parseInt(req.params.projectId, 10);
         const versionNumber = parseInt(req.params.versionNumber, 10);
+        console.log(`GET version endpoint called for project ${projectId}, version ${versionNumber}`);
         if (isNaN(versionNumber) || versionNumber < 1) {
+            console.log('Invalid version number:', versionNumber);
             return res.status(400).json({ error: 'Invalid version number' });
         }
+        console.log('Searching for version in database...');
         const version = await (0, knex_1.default)('project_versions')
             .where({ project_id: projectId, version_number: versionNumber })
             .first();
+        console.log('Database query result:', version ? 'Found' : 'Not found');
         if (!version) {
+            console.log('Version not found in database');
             return res.status(404).json({ error: 'Version not found' });
         }
         // Ensure version.data is properly handled - it's already an object from JSONB
         const versionData = version.data;
+        console.log('Returning version data with keys:', Object.keys(versionData || {}));
         res.json({
             success: true,
             data: versionData,
@@ -245,7 +298,6 @@ router.post('/:projectId/version/:versionNumber/rollback', authMiddleware_1.auth
             const logicData = rollbackData.logic || {
                 code: rollbackData.logicStudioCode || rollbackData.state?.editorCode || '',
                 ai_prompt: rollbackData.state?.prompt || '',
-                vendor: rollbackData.state?.vendor || 'siemens',
                 ui_state: {
                     showPendingChanges: rollbackData.state?.showPendingChanges || false,
                     showAISuggestions: rollbackData.state?.showAISuggestions || false,
@@ -264,8 +316,8 @@ router.post('/:projectId/version/:versionNumber/rollback', authMiddleware_1.auth
                     .update({
                     code: logicData.code,
                     ai_prompt: logicData.ai_prompt,
-                    vendor: logicData.vendor,
                     ui_state: logicData.ui_state,
+                    version_id: newVersion.id, // Link to the new rollback version
                     updated_at: new Date().toISOString()
                 });
             }
@@ -276,7 +328,7 @@ router.post('/:projectId/version/:versionNumber/rollback', authMiddleware_1.auth
                     user_id: userId,
                     code: logicData.code,
                     ai_prompt: logicData.ai_prompt,
-                    vendor: logicData.vendor,
+                    version_id: newVersion.id, // Link to the new rollback version
                     ui_state: logicData.ui_state,
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString()

@@ -46,7 +46,7 @@ router.get('/:projectId/logic-studio', authMiddleware_1.authenticateToken, autho
                     project_id: projectId,
                     code: '',
                     ai_prompt: '',
-                    vendor: 'siemens',
+                    version_id: null,
                     ui_state: {
                         showPendingChanges: false,
                         showAISuggestions: false,
@@ -72,7 +72,7 @@ router.post('/:projectId/logic-studio', authMiddleware_1.authenticateToken, auth
     try {
         const projectId = parseInt(req.params.projectId, 10);
         const userId = req.user?.userId;
-        const { code, ai_prompt, vendor, ui_state } = req.body;
+        const { code, ai_prompt, version_id, ui_state } = req.body;
         // Check if record exists
         const existingLogicStudio = await (0, knex_1.default)('logic_studio')
             .where({ project_id: projectId })
@@ -85,7 +85,7 @@ router.post('/:projectId/logic-studio', authMiddleware_1.authenticateToken, auth
                 .update({
                 code: code || existingLogicStudio.code,
                 ai_prompt: ai_prompt !== undefined ? ai_prompt : existingLogicStudio.ai_prompt,
-                vendor: vendor || existingLogicStudio.vendor,
+                version_id: version_id !== undefined ? version_id : existingLogicStudio.version_id,
                 ui_state: ui_state || existingLogicStudio.ui_state,
                 updated_at: new Date().toISOString()
             })
@@ -99,7 +99,7 @@ router.post('/:projectId/logic-studio', authMiddleware_1.authenticateToken, auth
                 user_id: userId,
                 code: code || '',
                 ai_prompt: ai_prompt || '',
-                vendor: vendor || 'siemens',
+                version_id: version_id || null,
                 ui_state: ui_state || {},
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
@@ -112,8 +112,7 @@ router.post('/:projectId/logic-studio', authMiddleware_1.authenticateToken, auth
             action: existingLogicStudio ? 'update_logic_studio' : 'create_logic_studio',
             metadata: {
                 projectId,
-                codeLength: code?.length || 0,
-                vendor: vendor || 'siemens'
+                codeLength: code?.length || 0
             },
             ip: req.ip,
             userAgent: req.get('User-Agent')
@@ -150,7 +149,7 @@ router.put('/:projectId/logic-studio/code', authMiddleware_1.authenticateToken, 
                 user_id: userId,
                 code: code,
                 ai_prompt: '',
-                vendor: 'siemens',
+                version_id: null,
                 ui_state: {},
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
