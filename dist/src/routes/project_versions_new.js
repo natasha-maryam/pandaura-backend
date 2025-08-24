@@ -87,11 +87,21 @@ router.post('/:projectId/create-version', authMiddleware_1.authenticateToken, au
         const tags = await (0, knex_1.default)('tags')
             .where({ project_id: projectId })
             .select('*');
+        // Get current Logic Studio state
+        const logicStudio = await (0, knex_1.default)('logic_studio')
+            .where({ project_id: projectId })
+            .first();
         // Create comprehensive version data including Logic Studio state and tags
         const versionData = {
             projectMetadata: project,
             timestamp: Date.now(),
-            logicStudioCode: state?.code || state?.content || '', // Store Logic Studio code
+            logic: logicStudio ? {
+                code: logicStudio.code,
+                ai_prompt: logicStudio.ai_prompt,
+                vendor: logicStudio.vendor,
+                ui_state: logicStudio.ui_state
+            } : null,
+            logicStudioCode: state?.editorCode || state?.code || logicStudio?.code || '', // Store Logic Studio code
             tags: tags, // Store all project tags at the time of version save
             moduleStates: {
                 LogicStudio: state || {}
@@ -145,7 +155,19 @@ router.get('/:projectId/version/:versionNumber', authMiddleware_1.authenticateTo
         if (!version) {
             return res.status(404).json({ error: 'Version not found' });
         }
-        res.json({ success: true, data: version.data });
+        // Ensure version.data is properly handled - it's already an object from JSONB
+        const versionData = version.data;
+        res.json({
+            success: true,
+            data: versionData,
+            version: {
+                id: version.id,
+                version_number: version.version_number,
+                message: version.message,
+                created_at: version.created_at,
+                is_auto: version.is_auto
+            }
+        });
     }
     catch (error) {
         console.error('Error fetching project version data:', error);
@@ -215,6 +237,50 @@ router.post('/:projectId/version/:versionNumber/rollback', authMiddleware_1.auth
                     scope: tag.scope
                 }));
                 await (0, knex_1.default)('tags').insert(tagsToInsert);
+            }
+        }
+        // Restore Logic Studio state from the rollback version
+        if (rollbackData.logic || rollbackData.logicStudioCode || rollbackData.state?.editorCode) {
+            // Extract logic studio data from various possible sources in the snapshot
+            const logicData = rollbackData.logic || {
+                code: rollbackData.logicStudioCode || rollbackData.state?.editorCode || '',
+                ai_prompt: rollbackData.state?.prompt || '',
+                vendor: rollbackData.state?.vendor || 'siemens',
+                ui_state: {
+                    showPendingChanges: rollbackData.state?.showPendingChanges || false,
+                    showAISuggestions: rollbackData.state?.showAISuggestions || false,
+                    vendorContextEnabled: rollbackData.state?.vendorContextEnabled || false,
+                    isCollapsed: rollbackData.state?.isCollapsed || false,
+                    collapseLevel: rollbackData.state?.collapseLevel || 0
+                }
+            };
+            // Update or insert Logic Studio record
+            const existingLogicStudio = await (0, knex_1.default)('logic_studio')
+                .where({ project_id: projectId })
+                .first();
+            if (existingLogicStudio) {
+                await (0, knex_1.default)('logic_studio')
+                    .where({ project_id: projectId })
+                    .update({
+                    code: logicData.code,
+                    ai_prompt: logicData.ai_prompt,
+                    vendor: logicData.vendor,
+                    ui_state: logicData.ui_state,
+                    updated_at: new Date().toISOString()
+                });
+            }
+            else {
+                await (0, knex_1.default)('logic_studio')
+                    .insert({
+                    project_id: projectId,
+                    user_id: userId,
+                    code: logicData.code,
+                    ai_prompt: logicData.ai_prompt,
+                    vendor: logicData.vendor,
+                    ui_state: logicData.ui_state,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                });
             }
         }
         // Log audit event

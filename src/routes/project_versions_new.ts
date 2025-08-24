@@ -102,11 +102,53 @@ router.post('/:projectId/create-version', authenticateToken, authorizeProjectAcc
       .where({ project_id: projectId })
       .select('*');
 
+    // Update Logic Studio table if state is provided (for Logic Studio versions)
+    let logicStudio;
+    if (state && state.module === 'LogicStudio') {
+      const logicStudioData = {
+        project_id: projectId,
+        user_id: userId,
+        code: state.editorCode || '',
+        ai_prompt: state.prompt || '',
+        version_id: null, // Will be updated after version is created
+        ui_state: {
+          showPendingChanges: state.showPendingChanges,
+          showAISuggestions: state.showAISuggestions,
+          vendorContextEnabled: state.vendorContextEnabled,
+          isCollapsed: state.isCollapsed,
+          collapseLevel: state.collapseLevel
+        },
+        updated_at: new Date().toISOString()
+      };
+
+      // Upsert the logic studio data
+      await db('logic_studio')
+        .insert(logicStudioData)
+        .onConflict('project_id')
+        .merge(logicStudioData);
+
+      logicStudio = logicStudioData;
+    } else {
+      // Get current Logic Studio state if not a Logic Studio version
+      logicStudio = await db('logic_studio')
+        .where({ project_id: projectId })
+        .first();
+    }
+
+    // Get project vendor for snapshot
+    const projectVendor = project.target_plc_vendor || 'siemens';
+
     // Create comprehensive version data including Logic Studio state and tags
     const versionData = {
       projectMetadata: project,
       timestamp: Date.now(),
-      logicStudioCode: state?.code || state?.content || '', // Store Logic Studio code
+      logic: logicStudio ? {
+        code: logicStudio.code,
+        ai_prompt: logicStudio.ai_prompt,
+        vendor: projectVendor, // Use project vendor instead of logic studio vendor
+        ui_state: logicStudio.ui_state
+      } : null,
+      logicStudioCode: state?.editorCode || state?.code || logicStudio?.code || '', // Store Logic Studio code
       tags: tags, // Store all project tags at the time of version save
       moduleStates: {
         LogicStudio: state || {}
@@ -129,6 +171,16 @@ router.post('/:projectId/create-version', authenticateToken, authorizeProjectAcc
       .returning('*');
 
     const versionNumber = nextVersionNumber;
+
+    // Update Logic Studio with the version_id if this was a Logic Studio version
+    if (state && state.module === 'LogicStudio') {
+      await db('logic_studio')
+        .where({ project_id: projectId })
+        .update({ 
+          version_id: version.id,
+          updated_at: new Date().toISOString()
+        });
+    }
 
     // Log audit event
     await logAuditEvent({
@@ -261,6 +313,51 @@ router.post('/:projectId/version/:versionNumber/rollback', authenticateToken, au
         }));
         
         await db('tags').insert(tagsToInsert);
+      }
+    }
+
+    // Restore Logic Studio state from the rollback version
+    if (rollbackData.logic || rollbackData.logicStudioCode || rollbackData.state?.editorCode) {
+      // Extract logic studio data from various possible sources in the snapshot
+      const logicData = rollbackData.logic || {
+        code: rollbackData.logicStudioCode || rollbackData.state?.editorCode || '',
+        ai_prompt: rollbackData.state?.prompt || '',
+        ui_state: {
+          showPendingChanges: rollbackData.state?.showPendingChanges || false,
+          showAISuggestions: rollbackData.state?.showAISuggestions || false,
+          vendorContextEnabled: rollbackData.state?.vendorContextEnabled || false,
+          isCollapsed: rollbackData.state?.isCollapsed || false,
+          collapseLevel: rollbackData.state?.collapseLevel || 0
+        }
+      };
+
+      // Update or insert Logic Studio record
+      const existingLogicStudio = await db('logic_studio')
+        .where({ project_id: projectId })
+        .first();
+
+      if (existingLogicStudio) {
+        await db('logic_studio')
+          .where({ project_id: projectId })
+          .update({
+            code: logicData.code,
+            ai_prompt: logicData.ai_prompt,
+            ui_state: logicData.ui_state,
+            version_id: newVersion.id, // Link to the new rollback version
+            updated_at: new Date().toISOString()
+          });
+      } else {
+        await db('logic_studio')
+          .insert({
+            project_id: projectId,
+            user_id: userId,
+            code: logicData.code,
+            ai_prompt: logicData.ai_prompt,
+            version_id: newVersion.id, // Link to the new rollback version
+            ui_state: logicData.ui_state,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
       }
     }
 

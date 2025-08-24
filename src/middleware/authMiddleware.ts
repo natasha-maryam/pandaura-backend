@@ -78,7 +78,7 @@ export function authenticateToken(req: AuthenticatedRequest, res: Response, next
   } catch (err) {
     console.log('❌ Token verification failed:', err);
     if (err instanceof jwt.TokenExpiredError) {
-      return res.status(401).json({ error: 'Token expired' });
+      return res.status(401).json({ error: 'Your session has expired. Please login again.' });
     } else if (err instanceof jwt.JsonWebTokenError) {
       return res.status(403).json({ error: 'Invalid token' });
     }

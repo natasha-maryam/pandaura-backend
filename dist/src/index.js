@@ -13,6 +13,7 @@ const projects_new_1 = __importDefault(require("./routes/projects-new"));
 const tags_new_1 = __importDefault(require("./routes/tags-new"));
 const project_versions_new_1 = __importDefault(require("./routes/project_versions_new"));
 const tagImport_1 = __importDefault(require("./routes/tagImport"));
+const logic_studio_1 = __importDefault(require("./routes/logic-studio"));
 const http_1 = __importDefault(require("http"));
 const database_manager_1 = require("./db/database-manager");
 // Import and initialize TagSyncService
@@ -81,6 +82,8 @@ app.use("/api/v1/tags", tags_new_1.default);
 app.use('/api/v1/tags', tagImport_1.default);
 // Register version control routes under projects
 app.use("/api/v1/projects", project_versions_new_1.default);
+// Logic Studio routes
+app.use("/api/v1/projects", logic_studio_1.default);
 // Add a simple test route
 app.get("/api/v1/simple-test", (req, res) => {
     console.log("Simple test route hit!");

@@ -56,7 +56,7 @@ function authenticateToken(req, res, next) {
     catch (err) {
         console.log('❌ Token verification failed:', err);
         if (err instanceof jsonwebtoken_1.default.TokenExpiredError) {
-            return res.status(401).json({ error: 'Token expired' });
+            return res.status(401).json({ error: 'Your session has expired. Please login again.' });
         }
         else if (err instanceof jsonwebtoken_1.default.JsonWebTokenError) {
             return res.status(403).json({ error: 'Invalid token' });

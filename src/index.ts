@@ -8,6 +8,7 @@ import projectsRoutes from "./routes/projects-new";
 import tagsRoutes from "./routes/tags-new";
 import projectVersionsRoutes from "./routes/project_versions_new";
 import tagImportRoutes from './routes/tagImport';
+import logicStudioRoutes from './routes/logic-studio';
 import http from "http";
 import { DatabaseManager } from "./db/database-manager";
 // Import and initialize TagSyncService
@@ -93,6 +94,8 @@ app.use("/api/v1/tags", tagsRoutes);
 app.use('/api/v1/tags', tagImportRoutes);
 // Register version control routes under projects
 app.use("/api/v1/projects", projectVersionsRoutes);
+// Logic Studio routes
+app.use("/api/v1/projects", logicStudioRoutes);
 
 
 // Add a simple test route
