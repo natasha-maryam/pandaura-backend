@@ -3,6 +3,7 @@ import cors, { CorsOptions } from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import authRoutes from "./routes/auth-new";
+import aiRoutes from './ai/wrapper-A-route';
 import orgRoutes from "./routes/orgs.new";
 import projectsRoutes from "./routes/projects-new";
 import tagsRoutes from "./routes/tags-new";
@@ -96,6 +97,8 @@ app.use('/api/v1/tags', tagImportRoutes);
 app.use("/api/v1/projects", projectVersionsRoutes);
 // Logic Studio routes
 app.use("/api/v1/projects", logicStudioRoutes);
+// mount under /api/assistant
+app.use('/api/assistant', aiRoutes);
 
 
 // Add a simple test route

@@ -8,6 +8,7 @@ const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
 const cookie_parser_1 = __importDefault(require("cookie-parser"));
 const auth_new_1 = __importDefault(require("./routes/auth-new"));
+const wrapper_A_route_1 = __importDefault(require("./ai/wrapper-A-route"));
 const orgs_new_1 = __importDefault(require("./routes/orgs.new"));
 const projects_new_1 = __importDefault(require("./routes/projects-new"));
 const tags_new_1 = __importDefault(require("./routes/tags-new"));
@@ -84,6 +85,8 @@ app.use('/api/v1/tags', tagImport_1.default);
 app.use("/api/v1/projects", project_versions_new_1.default);
 // Logic Studio routes
 app.use("/api/v1/projects", logic_studio_1.default);
+// mount under /api/assistant
+app.use('/api/assistant', wrapper_A_route_1.default);
 // Add a simple test route
 app.get("/api/v1/simple-test", (req, res) => {
     console.log("Simple test route hit!");
