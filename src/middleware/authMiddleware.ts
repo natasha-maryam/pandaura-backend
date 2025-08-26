@@ -36,16 +36,16 @@ export function authenticateToken(req: AuthenticatedRequest, res: Response, next
   const cookieToken = req.cookies?.pandaura_auth_token; // Fixed: use correct cookie name
   const token = headerToken || cookieToken;
 
-  console.log('🔐 Auth middleware called:', {
-    hasAuthHeader: !!authHeader,
-    hasHeaderToken: !!headerToken,
-    hasCookieToken: !!cookieToken,
-    hasToken: !!token,
-    tokenPrefix: token ? `${token.substring(0, 10)}...` : 'none',
-    url: req.url,
-    method: req.method,
-    cookieNames: Object.keys(req.cookies || {})
-  });
+  // console.log('🔐 Auth middleware called:', {
+  //   hasAuthHeader: !!authHeader,
+  //   hasHeaderToken: !!headerToken,
+  //   hasCookieToken: !!cookieToken,
+  //   hasToken: !!token,
+  //   tokenPrefix: token ? `${token.substring(0, 10)}...` : 'none',
+  //   url: req.url,
+  //   method: req.method,
+  //   cookieNames: Object.keys(req.cookies || {})
+  // });
 
   if (!token) {
     console.log('❌ No token provided in header or cookie');

@@ -178,14 +178,14 @@ const wss = new ws_1.WebSocketServer({
     server,
     path: "/ws/tags", // Only handle /ws/tags path
     verifyClient: (info, done) => {
-        console.log("🔍 WebSocket connection attempt:");
-        console.log("  - URL:", info.req.url);
-        console.log("  - Origin:", info.origin || "none");
-        console.log("  - Host:", info.req.headers.host);
+        // console.log("🔍 WebSocket connection attempt:");
+        // console.log("  - URL:", info.req.url);
+        // console.log("  - Origin:", info.origin || "none");
+        // console.log("  - Host:", info.req.headers.host);
         const origin = info.origin;
         // Allow connections without origin (for testing) or from allowed origins
         if (!origin) {
-            console.log("✅ No origin header - allowing connection");
+            // console.log("✅ No origin header - allowing connection");
             done(true);
             return;
         }
@@ -194,12 +194,12 @@ const wss = new ws_1.WebSocketServer({
             origin.startsWith("http://localhost") ||
             origin.startsWith("http://127.0.0.1"));
         if (isAllowed) {
-            console.log("✅ Origin allowed:", origin);
+            // console.log("✅ Origin allowed:", origin);
             done(true);
         }
         else {
-            console.log("❌ WS blocked origin:", origin);
-            console.log("✅ Allowed WS origins:", allowedWsOrigins);
+            // console.log("❌ WS blocked origin:", origin);
+            // console.log("✅ Allowed WS origins:", allowedWsOrigins);
             done(false, 403, "Forbidden");
         }
     },

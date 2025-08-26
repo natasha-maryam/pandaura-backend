@@ -1,265 +1,461 @@
-import { Router } from 'express';
-import { z } from 'zod';
-import { Ollama } from 'ollama';
-import { WRAPPER_A_SYSTEM } from './wrapper-A-system';
+import { Router } from "express";
+import { z, ZodIssue } from "zod";
+import { Ollama } from "ollama";
+import { WRAPPER_A_SYSTEM } from "./wrapper-A-system";
+import os from "os";
 
 const router = Router();
 
-// Initialize Ollama with proper configuration
+// ---------- Helpers ----------
+function removeDuplicateJsonKeys(jsonString: string): string {
+  try {
+    const parsed = JSON.parse(jsonString);
+    return JSON.stringify(parsed);
+  } catch {
+    const lines = jsonString.split("\n");
+    const seenKeys = new Set<string>();
+    const cleanedLines: string[] = [];
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i];
+      const keyMatch = line.match(/^\s*"([^"]+)"\s*:/);
+      if (keyMatch) {
+        const key = keyMatch[1];
+        if (!seenKeys.has(key)) {
+          seenKeys.add(key);
+          cleanedLines.unshift(line);
+        }
+      } else {
+        cleanedLines.unshift(line);
+      }
+    }
+    return cleanedLines.join("\n");
+  }
+}
+
+// ---------- Ollama client ----------
 const ollama = new Ollama({
-  host: process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434'
+  host: process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434",
 });
 
-// Circuit breaker pattern to prevent cascade failures
+// ---------- Circuit breaker ----------
 let consecutiveFailures = 0;
 const MAX_FAILURES = 3;
-const CIRCUIT_BREAKER_TIMEOUT = 60000; // 1 minute
+const CIRCUIT_BREAKER_TIMEOUT = 60_000; // 1 minute
 let circuitBreakerUntil = 0;
 
-// Optimized model parameters for production
+// ---------- Model / options ----------
+const DEFAULT_MODEL = "llama3.2:3b";
+const MODEL_NAME = process.env.MODEL_NAME || DEFAULT_MODEL;
+const CPU_THREADS = Math.min(8, Math.max(4, Math.floor(os.cpus().length / 2))); // Increased for Mistral
+
 const MODEL_CONFIG = {
-  model: 'phi3:mini',
+  model: MODEL_NAME,
   options: {
-    temperature: 0.0,        // Deterministic responses
-    top_k: 5,               // Very focused sampling
-    top_p: 0.5,             // More deterministic
-    num_ctx: 1024,          // Reasonable context window
-    num_predict: 150,       // Limit output length for speed
-    repeat_penalty: 1.0,    // No penalty for speed
-    num_thread: Math.min(4, Math.max(1, Math.floor(require('os').cpus().length / 2))), // Max 4 threads
-  }
+    temperature: 0.1, // Very low temp for deterministic automation code
+    top_k: 40, // Increased for better technical vocabulary
+    top_p: 0.9, // Slightly increased for technical responses
+    num_ctx: 16384, // Increased context for complex automation tasks
+    num_predict: 4096, // Allow longer technical responses with code
+    repeat_penalty: 1.15, // Slightly increased for better code generation
+    num_thread: CPU_THREADS,
+    // Mistral-specific settings optimized for automation tasks
+    stop: ["}"], // Help ensure clean JSON responses
+    mirostat: 2,
+    mirostat_eta: 0.1,
+    mirostat_tau: 5.0,
+  },
 };
+
+// ---------- Schemas ----------
+const CodeArtifactSchema = z.object({
+  language: z.literal("ST"),
+  vendor: z.enum(["Rockwell", "Siemens", "Beckhoff", "Generic"]),
+  compilable: z.boolean(),
+  filename: z.string(),
+  content: z.string(),
+});
+
+const TableArtifactSchema = z.object({
+  title: z.string(),
+  schema: z.array(z.string()),
+  rows: z.array(z.array(z.string())),
+});
+
+const ArtifactsSchema = z.object({
+  code: z.array(CodeArtifactSchema),
+  tables: z.array(TableArtifactSchema),
+  citations: z.array(z.string()),
+  diff: z.string().optional(),
+});
+
+const ResponseSchema = z.object({
+  status: z.enum(["ok", "needs_input", "error"]),
+  task_type: z.enum(["qna", "code_gen", "code_edit", "debug", "optimize", "calc", "checklist", "report"]),
+  assumptions: z.array(z.string()),
+  answer_md: z.string(),
+  artifacts: ArtifactsSchema.optional(),
+  next_actions: z.array(z.string()),
+  errors: z.array(z.string()),
+});
 
 const ReqSchema = z.object({
   prompt: z.string().min(1),
-  projectId: z.string().optional()
+  projectId: z.string().optional(),
+  vendor_selection: z.enum(["Rockwell", "Siemens", "Beckhoff", "Generic"]).optional(),
 });
 
-// Health check endpoint for Ollama
-router.get('/health', async (req, res) => {
+// ---------- Health (list) ----------
+router.get("/health", async (_req, res) => {
   try {
     const response = await ollama.list();
-    const hasModel = response.models.some(model => model.name === MODEL_CONFIG.model);
-    
+    const hasModel = response.models.some(
+      (m) =>
+        m.name === MODEL_NAME || m.name.startsWith(MODEL_NAME.split(":")[0])
+    );
     res.json({
-      status: 'ok',
+      status: "ok",
       ollama_connected: true,
       model_available: hasModel,
-      model_name: MODEL_CONFIG.model,
+      model_name: MODEL_NAME,
       consecutive_failures: consecutiveFailures,
-      circuit_breaker_active: Date.now() < circuitBreakerUntil
+      circuit_breaker_active: Date.now() < circuitBreakerUntil,
     });
   } catch (error: any) {
     res.status(503).json({
-      status: 'error',
+      status: "error",
       ollama_connected: false,
       error: error.message,
       consecutive_failures: consecutiveFailures,
-      circuit_breaker_active: Date.now() < circuitBreakerUntil
+      circuit_breaker_active: Date.now() < circuitBreakerUntil,
     });
   }
 });
 
-router.post('/test', async (req, res) => {
+// ---------- Health (chat ping) ----------
+router.get("/health/ping", async (_req, res) => {
+  try {
+    const start = Date.now();
+    const response = await ollama.chat({
+      model: MODEL_NAME,
+      messages: [{ role: "user", content: "ping" }],
+      options: { ...MODEL_CONFIG.options, num_ctx: 256, num_predict: 3 },
+      keep_alive: "5m", // keep loaded for 5 minutes
+    });
+    const duration = Date.now() - start;
+    res.json({
+      status: "ok",
+      model: MODEL_NAME,
+      response_time_ms: duration,
+      reply: response.message?.content ?? "pong",
+      model_loaded: true,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      status: "error",
+      message: "Health ping failed",
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
+// ---------- Warmup ----------
+router.post("/warmup", async (_req, res) => {
   try {
     const response = await ollama.chat({
-      model: 'phi3:mini',
-      messages: [{ role: 'user', content: 'Say "Hello"' }],
-      options: { 
-        temperature: 0.0,
-        num_ctx: 512,
-        num_predict: 10
-      }
+      model: MODEL_NAME,
+      messages: [{ role: "user", content: "Ready" }],
+      options: { ...MODEL_CONFIG.options, num_ctx: 512, num_predict: 5 },
+      keep_alive: "10m", // keep loaded for 10 minutes
     });
-    
-    res.json({ 
-      status: 'ok', 
-      message: response.message?.content || 'No response',
-      model: 'phi3:mini'
+    res.json({
+      status: "ok",
+      message: "Model warmed up successfully",
+      model: MODEL_NAME,
+      response: response.message?.content || "Ready",
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Quick test endpoint that returns proper format without AI
-router.post('/test-format', async (req, res) => {
+// ---------- Simple test ----------
+router.post("/test", async (_req, res) => {
+  try {
+    const response = await ollama.chat({
+      model: MODEL_NAME,
+      messages: [{ role: "user", content: 'Say "Hello"' }],
+      options: {
+        temperature: 0.0,
+        num_ctx: 512,
+        num_predict: 10,
+        num_thread: CPU_THREADS,
+      },
+      keep_alive: "5m",
+    });
+    res.json({
+      status: "ok",
+      message: response.message?.content || "No response",
+      model: MODEL_NAME,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ---------- Test format ----------
+router.post("/test-format", async (req, res) => {
   const { prompt } = req.body;
   res.json({
     status: "ok",
     task_type: "qna",
     assumptions: [],
     answer_md: `You asked: "${prompt}". This is a test response to verify the JSON format is working correctly.`,
-    artifacts: {
-      code: [],
-      tables: [],
-      citations: []
-    },
+    artifacts: { code: [], tables: [], citations: [] },
     next_actions: [],
-    errors: []
+    errors: [],
   });
 });
 
-router.post('/wrapperA', async (req, res) => {
+// ---------- Main wrapper ----------
+router.post("/wrapperA", async (req, res) => {
   const parsed = ReqSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
+  const { prompt, projectId, vendor_selection } = parsed.data;
 
-  const { prompt, projectId } = parsed.data;
-
-  // Set shorter timeouts to prevent hanging connections
-  req.setTimeout(18000); // 18 seconds
-  res.setTimeout(18000);
-
-  // Circuit breaker check
+  // Circuit breaker
   if (Date.now() < circuitBreakerUntil) {
     return res.status(503).json({
       status: "error",
       task_type: "qna",
       assumptions: [],
-      answer_md: "AI service is temporarily unavailable due to repeated failures. Please try again in a moment.",
+      answer_md:
+        "AI service is temporarily unavailable due to repeated failures. Please try again in a moment.",
       artifacts: { code: [], tables: [], citations: [] },
       next_actions: [],
-      errors: ["Circuit breaker active - service temporarily unavailable"]
+      errors: ["Circuit breaker active - service temporarily unavailable"],
+    });
+  }
+
+  // Validate prompt length
+  if (prompt.length > 2000) {
+    return res.status(400).json({
+      status: "error",
+      task_type: "qna",
+      assumptions: [],
+      answer_md: "Prompt is too long. Please keep it under 2000 characters.",
+      artifacts: { code: [], tables: [], citations: [] },
+      next_actions: [],
+      errors: ["Prompt exceeds maximum length"],
     });
   }
 
   try {
-    console.log(`🚀 Processing AI request: ${prompt.substring(0, 100)}...`);
     const startTime = Date.now();
-    
-    // Create AbortController for timeout management
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
 
-    try {
-      const response = await ollama.chat({
+    const TIMEOUT_MS = 120_000; // Increased to 2 minutes for complex requests
+
+    function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+      return new Promise((resolve, reject) => {
+        const t = setTimeout(() => reject(new Error("AI request timeout")), ms);
+        p.then((v) => {
+          clearTimeout(t);
+          resolve(v);
+        }).catch((e) => {
+          clearTimeout(t);
+          reject(e);
+        });
+      });
+    }
+
+    const response = await withTimeout(
+      ollama.chat({
         ...MODEL_CONFIG,
         messages: [
-          { role: 'system', content: WRAPPER_A_SYSTEM },
-          { role: 'user', content: `PROJECT_ID=${projectId ?? ''}\nUSER_PROMPT:\n${prompt}` }
+          { role: "system", content: WRAPPER_A_SYSTEM },
+          {
+            role: "user",
+            content: `PROJECT_ID=${projectId ?? ""}\nVENDOR=${vendor_selection ?? "Generic"}\nUSER_PROMPT:\n${prompt}`,
+          },
         ],
-        format: 'json',
-        keep_alive: '2m',
-        stream: false
-      });
+        format: "json",
+        keep_alive: "10m", // keep loaded for 10 minutes
+        stream: false as const, // 👈 force non-stream overload
+      }),
+      TIMEOUT_MS
+    );
 
-      clearTimeout(timeoutId);
+    const raw = response.message?.content ?? "";
+    if (!raw) throw new Error("Empty response from AI model");
 
-      const raw = response.message?.content ?? '';
-      if (!raw) {
-        throw new Error('Empty response from AI model');
-      }
+    console.log("🔍 Raw AI response:", raw); // Debug logging
 
-      let data;
-      try {
-        // Clean and parse JSON response
-        const jsonMatch = raw.match(/\{[\s\S]*\}/);
-        const jsonString = jsonMatch ? jsonMatch[0] : raw;
-        data = JSON.parse(jsonString);
-        
-        // Validate required fields
-        if (!data.status || !data.task_type || !data.answer_md) {
-          console.warn('Model returned incomplete JSON structure:', data);
-          
-          // Handle simple key-value responses
-          if (typeof data === 'object' && Object.keys(data).length === 1) {
-            const key = Object.keys(data)[0];
-            const value = data[key];
-            
-            data = {
-              status: "ok",
-              task_type: "qna",
-              assumptions: [],
-              answer_md: `**${key}**: ${value}`,
-              artifacts: { code: [], tables: [], citations: [] },
-              next_actions: [],
-              errors: []
-            };
-          } else {
-            throw new Error('Invalid response structure from AI model');
+    let data: any;
+    try {
+      // Clean the response and extract JSON
+      let cleanedRaw = raw.trim();
+      
+      // Remove any markdown code blocks
+      cleanedRaw = cleanedRaw.replace(/```json\s*|\s*```/g, "");
+      cleanedRaw = cleanedRaw.replace(/```\s*|\s*```/g, "");
+      
+      // Try to find and extract valid JSON structure
+      let jsonString = "";
+      
+      // First, try to find a complete JSON object
+      let jsonMatch = cleanedRaw.match(/\{[\s\S]*\}/);
+      
+      if (jsonMatch) {
+        jsonString = jsonMatch[0];
+      } else {
+        // If no complete match, try to extract and reconstruct JSON
+        const openBrace = cleanedRaw.indexOf('{');
+        if (openBrace !== -1) {
+          let braceCount = 0;
+          let endPos = -1;
+          for (let i = openBrace; i < cleanedRaw.length; i++) {
+            if (cleanedRaw[i] === '{') braceCount++;
+            if (cleanedRaw[i] === '}') braceCount--;
+            if (braceCount === 0) {
+              endPos = i;
+              break;
+            }
+          }
+          if (endPos !== -1) {
+            jsonString = cleanedRaw.substring(openBrace, endPos + 1);
           }
         }
-
-        // Ensure all required fields exist
-        data = {
-          status: data.status || "ok",
-          task_type: data.task_type || "qna",
-          assumptions: Array.isArray(data.assumptions) ? data.assumptions : [],
-          answer_md: data.answer_md || "AI response received but could not be parsed properly.",
-          artifacts: {
-            code: Array.isArray(data.artifacts?.code) ? data.artifacts.code : [],
-            tables: Array.isArray(data.artifacts?.tables) ? data.artifacts.tables : [],
-            citations: Array.isArray(data.artifacts?.citations) ? data.artifacts.citations : []
-          },
-          next_actions: Array.isArray(data.next_actions) ? data.next_actions : [],
-          errors: Array.isArray(data.errors) ? data.errors : []
-        };
-
-      } catch (parseError) {
-        console.error('JSON Parse Error:', parseError);
-        console.error('Raw response:', raw.substring(0, 500));
+      }
+      
+      if (!jsonString) throw new Error("No JSON structure found in response");
+      
+      // Try to fix common JSON issues
+      try {
+        // Test if it's valid JSON first
+        JSON.parse(jsonString);
+      } catch {
+        // If parsing fails, try to fix common issues
+        console.log("🔧 Attempting to fix malformed JSON...");
         
-        // Return a structured error response
+        // Remove incomplete trailing objects/arrays
+        jsonString = jsonString.replace(/,\s*\{[^}]*$/g, '');
+        jsonString = jsonString.replace(/,\s*\[[^\]]*$/g, '');
+        
+        // Ensure proper closing of incomplete strings
+        jsonString = jsonString.replace(/:\s*"[^"]*$/g, ': ""');
+        
+        // Remove duplicate consecutive commas
+        jsonString = jsonString.replace(/,\s*,+/g, ',');
+        
+        // Remove trailing commas before closing braces/brackets
+        jsonString = jsonString.replace(/,(\s*[}\]])/g, '$1');
+        
+        // Try to close incomplete objects
+        if (!jsonString.endsWith('}') && jsonString.includes('{')) {
+          const openBraces = (jsonString.match(/\{/g) || []).length;
+          const closeBraces = (jsonString.match(/\}/g) || []).length;
+          const missingBraces = openBraces - closeBraces;
+          if (missingBraces > 0) {
+            jsonString += '}'.repeat(missingBraces);
+          }
+        }
+      }
+
+      // Clean up duplicate keys
+      jsonString = removeDuplicateJsonKeys(jsonString);
+      const parsedJson = JSON.parse(jsonString);
+      
+      // Ensure artifacts field exists with default value if missing
+      if (!parsedJson.artifacts) {
+        parsedJson.artifacts = {
+          code: [],
+          tables: [],
+          citations: []
+        };
+      }
+      
+      // Validate against our schema
+      const result = ResponseSchema.safeParse(parsedJson);
+      
+      if (result.success) {
+        data = result.data;
+        console.log("✅ Successfully validated response against schema");
+      } else {
+        console.log("⚠️ Schema validation failed:", result.error);
+        // Create a safe response that matches our schema
         data = {
           status: "error",
           task_type: "qna",
           assumptions: [],
-          answer_md: "The AI model returned a response that could not be processed. Please try rephrasing your question.",
-          artifacts: { code: [], tables: [], citations: [] },
+          answer_md: "The AI response did not match the expected format. Original response: " + 
+                    (parsedJson.answer_md || raw.trim() || "No readable response"),
+          artifacts: {
+            code: [],
+            tables: [],
+            citations: [],
+          },
           next_actions: [],
-          errors: ["JSON parsing failed"]
+          errors: [
+            "Response validation failed",
+            ...result.error.issues.map((e: ZodIssue) => `${e.path.join('.')}: ${e.message}`)
+          ],
         };
       }
-
-      const processingTime = Date.now() - startTime;
-      console.log(`✅ AI response generated in ${processingTime}ms`);
-
-      // Reset failure counter on success
-      consecutiveFailures = 0;
+    } catch (parseError) {
+      console.log("❌ JSON parsing failed:", parseError);
       
-      res.json(data);
-
-    } catch (aiError: any) {
-      clearTimeout(timeoutId);
-      
-      // Handle specific AI errors
-      if (aiError.name === 'AbortError' || aiError.message.includes('timeout')) {
-        throw new Error('AI request timeout - model took too long to respond');
-      }
-      
-      if (aiError.message.includes('ECONNREFUSED') || aiError.message.includes('fetch failed')) {
-        throw new Error('Unable to connect to AI service - please check if Ollama is running');
-      }
-      
-      throw aiError;
+      data = {
+        status: "error",
+        task_type: "qna",
+        assumptions: [],
+        answer_md: raw.trim() || "The AI model provided a response but it could not be processed properly.",
+        artifacts: {
+          code: [],
+          tables: [],
+          citations: [],
+        },
+        next_actions: [],
+        errors: ["Failed to parse AI response as JSON"],
+      };
     }
 
+    consecutiveFailures = 0;
+    const processingTime = Date.now() - startTime;
+    console.log(`✅ AI response in ${processingTime}ms`);
+    res.json(data);
   } catch (err: any) {
-    console.error('AI request failed:', err.message);
-    
-    // Increment failure counter
     consecutiveFailures++;
-    
-    // Activate circuit breaker if too many failures
     if (consecutiveFailures >= MAX_FAILURES) {
       circuitBreakerUntil = Date.now() + CIRCUIT_BREAKER_TIMEOUT;
-      console.warn(`🔴 Circuit breaker activated for ${CIRCUIT_BREAKER_TIMEOUT/1000} seconds due to ${consecutiveFailures} consecutive failures`);
+      console.warn(
+        `🔴 Circuit breaker ON for ${
+          CIRCUIT_BREAKER_TIMEOUT / 1000
+        }s after ${consecutiveFailures} failures`
+      );
     }
-    
-    // Return appropriate error response
-    let errorMessage = "An error occurred while processing your request. Please try again.";
+
+    let errorMessage =
+      "An error occurred while processing your request. Please try again.";
     let httpStatus = 500;
-    
-    if (err.message.includes('timeout')) {
-      errorMessage = "The AI model is taking longer than expected. Please try a simpler question or try again later.";
+    const msg = String(err?.message || "");
+
+    if (msg.includes("abort") || msg.includes("timeout")) {
+      errorMessage =
+        "The AI model is taking longer than expected. Please try a simpler question or try again later.";
       httpStatus = 408;
-    } else if (err.message.includes('connect to AI service')) {
-      errorMessage = "AI service is currently unavailable. Please try again later.";
+    } else if (
+      msg.includes("ECONNREFUSED") ||
+      msg.includes("fetch failed") ||
+      msg.includes("connect")
+    ) {
+      errorMessage =
+        "AI service is currently unavailable. Please check if Ollama is running.";
       httpStatus = 503;
     }
-    
+
     res.status(httpStatus).json({
       status: "error",
       task_type: "qna",
@@ -267,9 +463,24 @@ router.post('/wrapperA', async (req, res) => {
       answer_md: errorMessage,
       artifacts: { code: [], tables: [], citations: [] },
       next_actions: [],
-      errors: [err.message || 'Unknown AI service error']
+      errors: [msg || "Unknown AI service error"],
     });
   }
+});
+
+// ---------- Fallback error handler ----------
+router.use((err: any, _req: any, res: any, _next: any) => {
+  console.error("Unhandled route error:", err);
+  if (res.headersSent) return;
+  res.status(500).json({
+    status: "error",
+    task_type: "qna",
+    assumptions: [],
+    answer_md: "Server error while processing the request.",
+    artifacts: { code: [], tables: [], citations: [] },
+    next_actions: [],
+    errors: [String(err?.message || err)],
+  });
 });
 
 export default router;

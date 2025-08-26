@@ -47,7 +47,7 @@ export class TagSyncService {
 
     // Handle WebSocket connections with authentication
     this.wss.on('connection', (ws: WebSocket, request) => {
-      console.log('🔌 New WebSocket connection attempt');
+      // console.log('🔌 New WebSocket connection attempt');
 
       // Parse URL to get token
       const url = new URL(request.url!, `http://${request.headers.host}`);
@@ -64,7 +64,7 @@ export class TagSyncService {
 
       try {
         const decoded = jwt.verify(token, JWT_SECRET) as any;
-        console.log(`✅ JWT verified for user: ${decoded.userId}`);
+        // console.log(`✅ JWT verified for user: ${decoded.userId}`);
 
         // Cast to AuthenticatedWebSocket and set user
         const authWs = ws as AuthenticatedWebSocket;
@@ -87,12 +87,12 @@ export class TagSyncService {
    * Handle new WebSocket connection
    */
   private handleConnection(ws: AuthenticatedWebSocket) {
-    console.log(`🔗 Setting up WebSocket event handlers for user: ${ws.user?.userId || 'unknown'}`);
+    // console.log(`🔗 Setting up WebSocket event handlers for user: ${ws.user?.userId || 'unknown'}`);
 
     ws.on('message', async (data: Buffer) => {
       try {
         const messageStr = data.toString();
-        console.log(`📨 Received WebSocket message from ${ws.user?.userId}: ${messageStr.substring(0, 100)}...`);
+        // console.log(`📨 Received WebSocket message from ${ws.user?.userId}: ${messageStr.substring(0, 100)}...`);
         const message: WebSocketMessage = JSON.parse(messageStr);
         await this.handleMessage(ws, message);
       } catch (error) {
@@ -102,7 +102,7 @@ export class TagSyncService {
     });
 
     ws.on('close', (code, reason) => {
-      console.log(`🔌 WebSocket close event - Code: ${code}, Reason: ${reason?.toString() || 'none'}, User: ${ws.user?.userId || 'unknown'}`);
+      // console.log(`🔌 WebSocket close event - Code: ${code}, Reason: ${reason?.toString() || 'none'}, User: ${ws.user?.userId || 'unknown'}`);
       this.handleDisconnection(ws);
     });
 
@@ -116,7 +116,7 @@ export class TagSyncService {
     });
 
     // Don't send immediate welcome message - let the client initiate communication
-    console.log(`✅ WebSocket connection ready for user: ${ws.user?.userId || 'unknown'}`);
+    // console.log(`✅ WebSocket connection ready for user: ${ws.user?.userId || 'unknown'}`);
 
     // Send a simple connection confirmation after a small delay
     setTimeout(() => {
@@ -126,7 +126,7 @@ export class TagSyncService {
           success: true,
           timestamp: new Date().toISOString()
         });
-        console.log(`✅ Connection confirmation sent to user: ${ws.user?.userId || 'unknown'}`);
+        // console.log(`✅ Connection confirmation sent to user: ${ws.user?.userId || 'unknown'}`);
       } catch (error) {
         console.error(`❌ Failed to send connection confirmation:`, error);
       }
@@ -180,19 +180,19 @@ export class TagSyncService {
       return;
     }
 
-    console.log(`🔍 DEBUG: Client subscribing to project ${message.projectId}`);
-    console.log(`🔍 DEBUG: Client user ID: ${ws.user?.userId || 'unknown'}`);
+    // console.log(`🔍 DEBUG: Client subscribing to project ${message.projectId}`);
+    // console.log(`🔍 DEBUG: Client user ID: ${ws.user?.userId || 'unknown'}`);
 
     ws.projectId = message.projectId;
 
     if (!this.clients.has(message.projectId)) {
       this.clients.set(message.projectId, new Set());
-      console.log(`🔍 DEBUG: Created new client set for project ${message.projectId}`);
+      // console.log(`🔍 DEBUG: Created new client set for project ${message.projectId}`);
     }
     
     this.clients.get(message.projectId)!.add(ws);
-    console.log(`🔍 DEBUG: Added client to project ${message.projectId}, total clients: ${this.clients.get(message.projectId)!.size}`);
-    console.log(`🔍 DEBUG: All subscribed projects:`, Array.from(this.clients.keys()));
+    // console.log(`🔍 DEBUG: Added client to project ${message.projectId}, total clients: ${this.clients.get(message.projectId)!.size}`);
+    // console.log(`🔍 DEBUG: All subscribed projects:`, Array.from(this.clients.keys()));
 
     // Send current tags for the project
     try {
@@ -200,7 +200,7 @@ export class TagSyncService {
         .where('project_id', parseInt(message.projectId))
         .orderBy('name');
       
-      console.log(`🔍 DEBUG: Sending ${tags.length} existing tags to new subscriber`);
+      // console.log(`🔍 DEBUG: Sending ${tags.length} existing tags to new subscriber`);
       
       this.sendResponse(ws, {
         type: 'tags_updated',
@@ -294,9 +294,9 @@ export class TagSyncService {
       }
 
       const projectVendor = project.target_plc_vendor || 'rockwell'; // Default to rockwell
-      console.log(`🔄 Starting tag sync for project ${message.projectId}, using project vendor: ${projectVendor}, syncId: ${syncId || 'direct'}`);
-      console.log(`🔍 DEBUG: ST Code received:`, message.stCode);
-      console.log(`🔍 DEBUG: ST Code length:`, message.stCode.length);
+      // console.log(`🔄 Starting tag sync for project ${message.projectId}, using project vendor: ${projectVendor}, syncId: ${syncId || 'direct'}`);
+      // console.log(`🔍 DEBUG: ST Code received:`, message.stCode);
+      // console.log(`🔍 DEBUG: ST Code length:`, message.stCode.length);
 
       // Parse variables from ST code using project vendor
       const parsedTags = parseSTVariablesDetailed(message.stCode, projectVendor);
@@ -316,14 +316,14 @@ export class TagSyncService {
           vendor: projectVendor
         };
         const formatted = formatTagForVendor(vendorTag, projectVendor as 'rockwell' | 'siemens' | 'beckhoff');
-        console.log(`📝 Formatted tag:`, JSON.stringify(formatted, null, 2));
+        // console.log(`📝 Formatted tag:`, JSON.stringify(formatted, null, 2));
         return formatted;
       });
 
       // Upsert tags in database
-      console.log(`🔍 Debug: Project ID: ${message.projectId}, User ID: ${ws.user!.userId}`);
+      // console.log(`🔍 Debug: Project ID: ${message.projectId}, User ID: ${ws.user!.userId}`);
       await this.upsertTagsInDB(message.projectId, formattedTags, ws.user!.userId);
-      console.log(`💾 Upserted ${formattedTags.length} tags to database`);
+      // console.log(`💾 Upserted ${formattedTags.length} tags to database`);
 
       // Fetch updated tags using Knex
       const updatedTags = await db('tags')
@@ -331,10 +331,10 @@ export class TagSyncService {
         .orderBy('name');
 
       const duration = Date.now() - startTime;
-      console.log(`✅ Tag sync completed in ${duration}ms for project ${message.projectId}`);
+      // console.log(`✅ Tag sync completed in ${duration}ms for project ${message.projectId}`);
 
-      console.log(`🔍 DEBUG: About to broadcast tags_updated to project ${message.projectId}`);
-      console.log(`🔍 DEBUG: Broadcasting ${updatedTags.length} tags to all subscribers`);
+      // console.log(`🔍 DEBUG: About to broadcast tags_updated to project ${message.projectId}`);
+      // console.log(`🔍 DEBUG: Broadcasting ${updatedTags.length} tags to all subscribers`);
       
       // Broadcast to all subscribers of this project
       this.broadcastToProject(message.projectId, {
@@ -483,8 +483,8 @@ export class TagSyncService {
    * Handle client disconnection
    */
   private handleDisconnection(ws: AuthenticatedWebSocket) {
-    console.log(`🔌 WebSocket client disconnected: ${ws.user?.username || 'unknown'}`);
-    console.log(`🔍 DEBUG: Client was subscribed to project: ${ws.projectId || 'none'}`);
+    // console.log(`🔌 WebSocket client disconnected: ${ws.user?.username || 'unknown'}`);
+    // console.log(`🔍 DEBUG: Client was subscribed to project: ${ws.projectId || 'none'}`);
 
     // Clear any pending debounce timer
     if (ws.debounceTimer) {
@@ -497,10 +497,10 @@ export class TagSyncService {
       const projectClients = this.clients.get(ws.projectId);
       if (projectClients) {
         projectClients.delete(ws);
-        console.log(`🔍 DEBUG: Removed client from project ${ws.projectId}, remaining clients: ${projectClients.size}`);
+        // console.log(`🔍 DEBUG: Removed client from project ${ws.projectId}, remaining clients: ${projectClients.size}`);
         if (projectClients.size === 0) {
           this.clients.delete(ws.projectId);
-          console.log(`📂 No more clients for project ${ws.projectId}, removed from active projects`);
+          // console.log(`📂 No more clients for project ${ws.projectId}, removed from active projects`);
         }
       }
       ws.projectId = undefined;
@@ -534,10 +534,10 @@ export class TagSyncService {
   private broadcastToProject(projectId: string, response: TagSyncResponse) {
     const projectClients = this.clients.get(projectId);
     
-    console.log(`🔍 DEBUG: Broadcasting to project ${projectId}`);
-    console.log(`🔍 DEBUG: Subscribed clients count: ${projectClients?.size || 0}`);
-    console.log(`🔍 DEBUG: Message type: ${response.type}`);
-    console.log(`🔍 DEBUG: All project subscriptions:`, Array.from(this.clients.keys()));
+    // console.log(`🔍 DEBUG: Broadcasting to project ${projectId}`);
+    // console.log(`🔍 DEBUG: Subscribed clients count: ${projectClients?.size || 0}`);
+    // console.log(`🔍 DEBUG: Message type: ${response.type}`);
+    // console.log(`🔍 DEBUG: All project subscriptions:`, Array.from(this.clients.keys()));
     
     if (projectClients) {
       const message = JSON.stringify(response);
