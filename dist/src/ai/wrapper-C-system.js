@@ -1,6 +1,8 @@
-import { TOP_LEVEL_SYSTEM } from './top-level-system';
-
-export const WRAPPER_C_SYSTEM = `${TOP_LEVEL_SYSTEM}
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.WRAPPER_C_SYSTEM = void 0;
+const top_level_system_1 = require("./top-level-system");
+exports.WRAPPER_C_SYSTEM = `${top_level_system_1.TOP_LEVEL_SYSTEM}
 
 WRAPPER C SPECIFIC RULES - Verification & Self-Check Layer:
 GOAL: Reduce hallucinations and incorrect outputs by forcing the model to validate its own answer through a two-step verification process.

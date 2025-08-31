@@ -119,8 +119,8 @@ function cleanAnswerMd(answerMd: string): string {
   let cleaned = answerMd.replace(/```[\s\S]*?```/g, '');
   // Remove inline code blocks (`...`)
   cleaned = cleaned.replace(/`[^`]*`/g, '');
-  // Remove "Next step →" sentences
-  cleaned = cleaned.replace(/Next step → .*/gi, '');
+  // Format "Next step →" as proper heading instead of removing it
+  cleaned = cleaned.replace(/Next step → (.+)/gi, '\n\n### Next Step\n\n$1');
   // Clean up extra whitespace
   cleaned = cleaned.replace(/\n\s*\n\s*\n/g, '\n\n');
   return cleaned.trim();

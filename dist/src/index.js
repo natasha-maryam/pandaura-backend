@@ -97,9 +97,9 @@ app.use('/api/v1/tags', tagImport_1.default);
 app.use("/api/v1/projects", project_versions_new_1.default);
 // Logic Studio routes
 app.use("/api/v1/projects", logic_studio_1.default);
-// AI routes (OpenAI)
+// AI routes (OpenAI) - Wrapper A with built-in verification & multi-perspective analysis
 app.use('/api/assistant', openai_wrapper_1.default);
-// AI Wrapper B routes (Document & Logic Analyst)
+// AI Wrapper B routes (Document & Logic Analyst) - with built-in verification & multi-perspective analysis
 app.use('/api/assistant', wrapper_B_route_1.default);
 // Add a simple test route
 app.get("/api/v1/simple-test", (req, res) => {

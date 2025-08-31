@@ -1,6 +1,8 @@
-import { TOP_LEVEL_SYSTEM } from './top-level-system';
-
-export const WRAPPER_D_SYSTEM = `${TOP_LEVEL_SYSTEM}
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.WRAPPER_D_SYSTEM = void 0;
+const top_level_system_1 = require("./top-level-system");
+exports.WRAPPER_D_SYSTEM = `${top_level_system_1.TOP_LEVEL_SYSTEM}
 
 WRAPPER D SPECIFIC RULES - Multi-Perspective Role Check:
 GOAL: Ensure robustness by simulating multiple "expert lenses" before delivering a final answer. Generate responses by combining perspectives from three distinct expert roles, then synthesize into ONE final answer that balances correctness, clarity, and safety.
