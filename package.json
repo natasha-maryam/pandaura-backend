@@ -6,7 +6,7 @@
   "scripts": {
     "build": "rimraf dist && tsc",
     "start": "node dist/src/index.js",
-    "dev": "concurrently \"npx tsc --watch\" \"nodemon dist/index.js\"",
+    "dev": "concurrently \"npx tsc --watch\" \"nodemon dist/src/index.js\"",
     "dev:ts": "nodemon --exec \"npx ts-node src/index.ts\" --watch src --ext ts",
     "vercel-build": "npx tsc",
     "postinstall": "npm run build",
@@ -45,6 +45,7 @@
     "@types/cookie-parser": "^1.4.9",
     "@types/knex": "^0.15.2",
     "@types/multer": "^2.0.0",
+    "@types/pdf-parse": "^1.1.5",
     "@types/ws": "^8.18.1",
     "@vercel/postgres": "^0.10.0",
     "argon2": "^0.31.2",
@@ -59,7 +60,8 @@
     "jsonwebtoken": "^9.0.2",
     "knex": "^3.1.0",
     "multer": "^2.0.2",
-    "ollama": "^0.5.17",
+    "openai": "^5.16.0",
+    "pdf-parse": "^1.1.1",
     "pg": "^8.16.3",
     "speakeasy": "^2.0.0",
     "ts-node": "^10.9.2",
@@ -69,7 +71,7 @@
     "xlsx": "^0.18.5",
     "xml2js": "^0.6.2",
     "xmlbuilder": "^15.1.1",
-    "zod": "^4.1.1"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
@@ -78,7 +80,7 @@
     "@types/node": "^24.2.1",
     "@types/pg": "^8.15.5",
     "@types/speakeasy": "^2.0.10",
-    "@types/uuid": "^9.0.7",
+    "@types/uuid": "^9.0.8",
     "@types/xml2js": "^0.4.14",
     "concurrently": "^9.2.0",
     "nodemon": "^3.1.10",

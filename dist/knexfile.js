@@ -4,10 +4,10 @@ const config = {
     development: {
         client: 'postgresql',
         connection: {
-            host: process.env.POSTGRES_HOST,
+            host: process.env.POSTGRES_HOST || 'localhost',
             port: parseInt(process.env.POSTGRES_PORT || '5432'),
             user: process.env.POSTGRES_USER || 'postgres',
-            password: process.env.POSTGRES_PASSWORD || 'password',
+            password: process.env.POSTGRES_PASSWORD || 'natasha',
             database: process.env.POSTGRES_DB || 'pandaura_dev',
             ssl: false
         },
@@ -16,7 +16,7 @@ const config = {
             max: 10
         },
         migrations: {
-            directory: './knex-migrations',
+            directory: './dist/knex-migrations',
             tableName: 'knex_migrations'
         },
         seeds: {
@@ -44,7 +44,7 @@ const config = {
             propagateCreateError: false
         },
         migrations: {
-            directory: './knex-migrations',
+            directory: './dist/knex-migrations',
             tableName: 'knex_migrations'
         },
         seeds: {
@@ -60,8 +60,8 @@ const config = {
             host: process.env.STAGING_POSTGRES_HOST || 'localhost',
             port: parseInt(process.env.STAGING_POSTGRES_PORT || '5432'),
             user: process.env.STAGING_POSTGRES_USER || 'postgres',
-            password: process.env.STAGING_POSTGRES_PASSWORD,
-            database: process.env.STAGING_POSTGRES_DB || 'pandaura_staging',
+            password: process.env.STAGING_POSTGRES_PASSWORD || 'natasha',
+            database: process.env.STAGING_POSTGRES_DB || 'pandaura_dev',
             ssl: process.env.STAGING_POSTGRES_SSL === 'true' ? { rejectUnauthorized: false } : false
         },
         pool: {
@@ -69,7 +69,7 @@ const config = {
             max: 10
         },
         migrations: {
-            directory: './knex-migrations',
+            directory: './dist/knex-migrations',
             tableName: 'knex_migrations'
         },
         seeds: {
@@ -83,15 +83,15 @@ const config = {
             host: process.env.TEST_POSTGRES_HOST || 'localhost',
             port: parseInt(process.env.TEST_POSTGRES_PORT || '5432'),
             user: process.env.TEST_POSTGRES_USER || 'postgres',
-            password: process.env.TEST_POSTGRES_PASSWORD || 'password',
-            database: process.env.TEST_POSTGRES_DB || 'pandaura_test'
+            password: process.env.TEST_POSTGRES_PASSWORD || 'natasha',
+            database: process.env.TEST_POSTGRES_DB || 'pandaura_dev',
         },
         pool: {
             min: 1,
             max: 5
         },
         migrations: {
-            directory: './knex-migrations',
+            directory: './dist/knex-migrations',
             tableName: 'knex_migrations'
         },
         seeds: {

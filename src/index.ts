@@ -3,7 +3,7 @@ import cors, { CorsOptions } from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import authRoutes from "./routes/auth-new";
-import aiRoutes from './ai/wrapper-A-route';
+import openaiRoutes from './ai/openai-wrapper';
 import orgRoutes from "./routes/orgs.new";
 import projectsRoutes from "./routes/projects-new";
 import tagsRoutes from "./routes/tags-new";
@@ -42,7 +42,18 @@ const corsOptions: CorsOptions = {
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: [
+    "Content-Type", 
+    "Authorization", 
+    "Accept", 
+    "Cache-Control",
+    "X-Requested-With",
+    "sec-ch-ua",
+    "sec-ch-ua-mobile", 
+    "sec-ch-ua-platform",
+    "User-Agent",
+    "Referer"
+  ],
   exposedHeaders: ["Content-Disposition"], // ✅ Expose Content-Disposition header for file downloads
 };
 
@@ -51,7 +62,7 @@ app.use((req, res, next) => {
   if (req.method === "OPTIONS") {
     res.header("Access-Control-Allow-Origin", req.headers.origin || "");
     res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, Cache-Control, X-Requested-With, sec-ch-ua, sec-ch-ua-mobile, sec-ch-ua-platform, User-Agent, Referer");
     res.header("Access-Control-Allow-Credentials", "true");
     res.header("Access-Control-Expose-Headers", "Content-Disposition"); // ✅ Expose Content-Disposition
     return res.sendStatus(204);
@@ -97,14 +108,19 @@ app.use('/api/v1/tags', tagImportRoutes);
 app.use("/api/v1/projects", projectVersionsRoutes);
 // Logic Studio routes
 app.use("/api/v1/projects", logicStudioRoutes);
-// mount under /api/assistant
-app.use('/api/assistant', aiRoutes);
+// AI routes (OpenAI)
+app.use('/api/assistant', openaiRoutes);
 
 
 // Add a simple test route
 app.get("/api/v1/simple-test", (req, res) => {
   console.log("Simple test route hit!");
   res.json({ message: "Simple test route works!" });
+});
+
+// Serve the memory test HTML page
+app.get("/test-memory", (req, res) => {
+  res.sendFile(__dirname + '/../test-memory.html');
 });
 
 // Health check endpoint with database status
