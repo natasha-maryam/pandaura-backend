@@ -21,6 +21,77 @@ const openai = new OpenAI({
 const MODEL_NAME = config.openai.model;
 const VISION_MODEL = "gpt-4o"; // Use GPT-4o for vision capabilities
 
+// ---------- Session Memory System ----------
+interface SessionMemory {
+  messages: Array<{ role: 'user' | 'assistant'; content: string; timestamp: Date }>;
+
+  uploadedFiles: ProcessedFile[];
+  createdAt: Date;
+  lastAccessed: Date;
+}
+
+const sessionMemory: Record<string, SessionMemory> = {};
+
+// Clean up old sessions (older than 24 hours)
+setInterval(() => {
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  Object.keys(sessionMemory).forEach(sessionId => {
+    if (sessionMemory[sessionId].lastAccessed.getTime() < cutoff) {
+      delete sessionMemory[sessionId];
+    }
+  });
+}, 60 * 60 * 1000); // Clean up every hour
+
+function getOrCreateSession(sessionId: string): SessionMemory {
+  if (!sessionMemory[sessionId]) {
+    sessionMemory[sessionId] = {
+      messages: [],
+      uploadedFiles: [],
+      createdAt: new Date(),
+      lastAccessed: new Date()
+    };
+  } else {
+    sessionMemory[sessionId].lastAccessed = new Date();
+  }
+  return sessionMemory[sessionId];
+}
+
+function addToMemory(sessionId: string, role: 'user' | 'assistant', content: string) {
+  const session = getOrCreateSession(sessionId);
+  session.messages.push({
+    role,
+    content,
+    timestamp: new Date()
+  });
+  
+  // Keep only last 20 messages to prevent memory bloat
+  if (session.messages.length > 20) {
+    session.messages = session.messages.slice(-20);
+  }
+}
+
+function addFilesToMemory(sessionId: string, files: ProcessedFile[]) {
+  const session = getOrCreateSession(sessionId);
+  // Add new files to session memory, avoiding duplicates
+  files.forEach(newFile => {
+    const existingIndex = session.uploadedFiles.findIndex(f => f.filename === newFile.filename);
+    if (existingIndex >= 0) {
+      // Update existing file
+      session.uploadedFiles[existingIndex] = newFile;
+    } else {
+      // Add new file
+      session.uploadedFiles.push(newFile);
+    }
+  });
+}
+
+function convertMessagesToOpenAIFormat(messages: Array<{ role: 'user' | 'assistant'; content: string; timestamp: Date }>) {
+  return messages.map(msg => ({
+    role: msg.role,
+    content: msg.content
+  }));
+}
+
 // ---------- Multer configuration for file uploads ----------
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -131,7 +202,7 @@ function removeDuplicateJsonKeys(jsonString: string): string {
       
       for (let i = lines.length - 1; i >= 0; i--) {
         const line = lines[i];
-        const keyMatch = line.match(/^\\s*"([^"]+)"\\s*:/);
+        const keyMatch = line.match(/^\s*"([^"]+)"\s*:/);
         if (keyMatch) {
           const key = keyMatch[1];
           if (!seenKeys.has(key)) {
@@ -214,56 +285,62 @@ async function processUploadedFiles(files: Express.Multer.File[]): Promise<Proce
   return processedFiles;
 }
 
-function buildContextFromFiles(files: ProcessedFile[]): string {
-  let context = "=== UPLOADED FILES CONTEXT ===\\n\\n";
+function buildContextFromFiles(files: ProcessedFile[], includeFromSession: boolean = false): string {
+  let context = "";
+  
+  if (includeFromSession && files.length > 0) {
+    context += "=== PREVIOUSLY UPLOADED FILES (Available for Reference) ===\n\n";
+  } else if (files.length > 0) {
+    context += "=== UPLOADED FILES CONTEXT ===\n\n";
+  }
   
   files.forEach((file, index) => {
-    context += `FILE ${index + 1}: ${file.filename}\\n`;
-    context += `Type: ${file.mimetype}\\n`;
-    context += `Size: ${(file.size / 1024).toFixed(2)} KB\\n`;
+    context += `FILE ${index + 1}: ${file.filename}\n`;
+    context += `Type: ${file.mimetype}\n`;
+    context += `Size: ${(file.size / 1024).toFixed(2)} KB\n`;
     
     // Add PLC-specific information if available
     if (file.extractedData?.plcInfo?.vendor) {
-      context += `PLC Vendor: ${file.extractedData.plcInfo.vendor}\\n`;
-      context += `Project: ${file.extractedData.plcInfo.projectName || 'Unknown'}\\n`;
+      context += `PLC Vendor: ${file.extractedData.plcInfo.vendor}\n`;
+      context += `Project: ${file.extractedData.plcInfo.projectName || 'Unknown'}\n`;
     }
     
     if (file.extractedData?.tags && file.extractedData.tags.length > 0) {
-      context += `Tags Found: ${file.extractedData.tags.length}\\n`;
-      context += `Sample Tags:\\n`;
+      context += `Tags Found: ${file.extractedData.tags.length}\n`;
+      context += `Sample Tags:\n`;
       file.extractedData.tags.slice(0, 5).forEach((tag: any) => {
-        context += `  - ${tag.TagName || tag.name}: ${tag.DataType || tag.dataType} (${tag.Direction || 'Internal'})\\n`;
+        context += `  - ${tag.TagName || tag.name}: ${tag.DataType || tag.dataType} (${tag.Direction || 'Internal'})\n`;
       });
       if (file.extractedData.tags.length > 5) {
-        context += `  ... and ${file.extractedData.tags.length - 5} more tags\\n`;
+        context += `  ... and ${file.extractedData.tags.length - 5} more tags\n`;
       }
     }
     
     if (file.extractedData?.routines && file.extractedData.routines.length > 0) {
-      context += `Routines Found: ${file.extractedData.routines.length}\\n`;
+      context += `Routines Found: ${file.extractedData.routines.length}\n`;
       file.extractedData.routines.forEach((routine: any) => {
-        context += `  - ${routine.Name}: ${routine.Type}\\n`;
+        context += `  - ${routine.Name}: ${routine.Type}\n`;
       });
     }
     
     if (file.content && file.content.length < 2000) {
-      context += `Content:\\n${file.content}\\n`;
+      context += `Content:\n${file.content}\n`;
     } else if (file.content) {
-      context += `Content (truncated):\\n${file.content.substring(0, 1500)}...\\n`;
+      context += `Content (truncated):\n${file.content.substring(0, 1500)}...\n`;
     }
     
     if (file.extractedData?.tables) {
-      context += `Tables Extracted: ${file.extractedData.tables.length}\\n`;
+      context += `Tables Extracted: ${file.extractedData.tables.length}\n`;
       file.extractedData.tables.forEach((table: any) => {
-        context += `  Table: ${table.title} (${table.rows?.length || 0} rows)\\n`;
+        context += `  Table: ${table.title} (${table.rows?.length || 0} rows)\n`;
       });
     }
     
     if (file.metadata) {
-      context += `Metadata: ${JSON.stringify(file.metadata, null, 2)}\\n`;
+      context += `Metadata: ${JSON.stringify(file.metadata, null, 2)}\n`;
     }
     
-    context += "\\n---\\n\\n";
+    context += "\n---\n\n";
   });
   
   return context;
@@ -319,6 +396,7 @@ const ReqSchema = z.object({
   prompt: z.string().min(1),
   projectId: z.string().optional(),
   vendor_selection: z.enum(["Rockwell", "Siemens", "Beckhoff", "Generic"]).optional(),
+  sessionId: z.string().optional(), // Add sessionId support
   stream: z.union([z.boolean(), z.string()]).optional().transform(val => {
     if (typeof val === 'string') {
       return val.toLowerCase() === 'true';
@@ -405,7 +483,7 @@ router.post("/test-format", async (req, res) => {
 });
 
 // ---------- Streaming handler for Wrapper B ----------
-async function handleWrapperBStreamingRequest(req: any, res: any, prompt: string, projectId?: string, vendor_selection?: string) {
+async function handleWrapperBStreamingRequest(req: any, res: any, prompt: string, projectId?: string, vendor_selection?: string, sessionId?: string) {
   try {
     // Set up streaming response headers
     res.setHeader('Content-Type', 'text/event-stream');
@@ -426,6 +504,17 @@ async function handleWrapperBStreamingRequest(req: any, res: any, prompt: string
     // Send initial status
     res.write(`data: ${JSON.stringify({ content: 'Processing documents and analyzing...', type: 'status' })}\n\n`);
     
+    // Get session memory if sessionId provided
+    const session = sessionId ? getOrCreateSession(sessionId) : null;
+    let conversationHistory: Array<{ role: 'system' | 'user' | 'assistant'; content: string | any[] }> = [
+      { role: 'system', content: WRAPPER_B_SYSTEM }
+    ];
+    
+    if (session && session.messages.length > 0) {
+      // Add conversation history
+      conversationHistory.push(...convertMessagesToOpenAIFormat(session.messages));
+    }
+    
     // Process uploaded files
     const files = req.files as Express.Multer.File[] || [];
     let processedFiles: ProcessedFile[] = [];
@@ -435,21 +524,26 @@ async function handleWrapperBStreamingRequest(req: any, res: any, prompt: string
       res.write(`data: ${JSON.stringify({ content: `Processing ${files.length} uploaded files...`, type: 'status' })}\n\n`);
       processedFiles = await processUploadedFiles(files);
       fileContext = buildContextFromFiles(processedFiles);
+      
+      // Add files to session memory
+      if (sessionId) {
+        addFilesToMemory(sessionId, processedFiles);
+      }
+    } else if (session && session.uploadedFiles.length > 0) {
+      // No new files, but use previously uploaded files from session
+      res.write(`data: ${JSON.stringify({ content: `Using ${session.uploadedFiles.length} previously uploaded files...`, type: 'status' })}\n\n`);
+      fileContext = buildContextFromFiles(session.uploadedFiles, true);
+      processedFiles = session.uploadedFiles; // For response metadata
     }
-
-    // Build messages for OpenAI
-    const messages: Array<{ role: 'system' | 'user'; content: string | any[] }> = [
-      { role: 'system', content: WRAPPER_B_SYSTEM }
-    ];
 
     // Prepare user message content
-    let userContent = `PROJECT_ID=${projectId ?? ""}\\nVENDOR=${vendor_selection ?? "Generic"}\\n\\n`;
+    let userContent = `PROJECT_ID=${projectId ?? ""}\nVENDOR=${vendor_selection ?? "Generic"}\n\n`;
     
     if (fileContext) {
-      userContent += fileContext + "\\n\\n";
+      userContent += fileContext + "\n\n";
     }
     
-    userContent += `USER_PROMPT:\\n${prompt}\\n\\n`;
+    userContent += `USER_PROMPT:\n${prompt}\n\n`;
     userContent += `RESPONSE REQUIREMENTS: Respond ONLY with valid JSON matching the schema specified in system message. Include ALL required fields: status, task_type, assumptions, answer_md, artifacts, next_actions, errors. No text outside the JSON object.`;
 
     // Handle images separately for vision model
@@ -469,10 +563,10 @@ async function handleWrapperBStreamingRequest(req: any, res: any, prompt: string
         });
       });
       
-      messages.push({ role: 'user', content });
+      conversationHistory.push({ role: 'user', content });
     } else {
       // Text-only message
-      messages.push({ role: 'user', content: userContent });
+      conversationHistory.push({ role: 'user', content: userContent });
     }
 
     res.write(`data: ${JSON.stringify({ content: 'Analyzing with AI...', type: 'status' })}\n\n`);
@@ -498,7 +592,7 @@ async function handleWrapperBStreamingRequest(req: any, res: any, prompt: string
     const response = await withTimeout(
       openai.chat.completions.create({
         model: modelToUse,
-        messages: messages as any,
+        messages: conversationHistory as any,
         temperature: 0.1,
         max_tokens: 4000,
         response_format: { type: "json_object" },
@@ -509,14 +603,20 @@ async function handleWrapperBStreamingRequest(req: any, res: any, prompt: string
     const raw = response.choices[0]?.message?.content ?? "";
     if (!raw) throw new Error("Empty response from AI model");
 
+    // Save to memory if sessionId provided
+    if (sessionId) {
+      addToMemory(sessionId, 'user', prompt);
+      addToMemory(sessionId, 'assistant', raw);
+    }
+
     let data: any;
     try {
       // Clean and parse JSON response
       let cleanedRaw = raw.trim();
       
       // Remove markdown code blocks
-      cleanedRaw = cleanedRaw.replace(/```json\\s*|\\s*```/g, "");
-      cleanedRaw = cleanedRaw.replace(/```\\s*|\\s*```/g, "");
+      cleanedRaw = cleanedRaw.replace(/```json\s*|\s*```/g, "");
+      cleanedRaw = cleanedRaw.replace(/```\s*|\s*```/g, "");
       
       // Clean duplicate keys
       cleanedRaw = removeDuplicateJsonKeys(cleanedRaw);
@@ -565,7 +665,7 @@ async function handleWrapperBStreamingRequest(req: any, res: any, prompt: string
           answer: data.answer_md,
           fullResponse: {
             ...data,
-            processed_files: processedFiles.map(pf => ({
+            processed_files: (session?.uploadedFiles || processedFiles).map(pf => ({
               filename: pf.filename,
               type: pf.mimetype,
               size: pf.size,
@@ -616,7 +716,7 @@ router.post("/wrapperB", upload.array('files', 10), async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
-  const { prompt, projectId, vendor_selection, stream } = parsed.data;
+  const { prompt, projectId, vendor_selection, sessionId, stream } = parsed.data;
 
   // Circuit breaker check
   if (Date.now() < circuitBreakerUntil) {
@@ -646,11 +746,22 @@ router.post("/wrapperB", upload.array('files', 10), async (req, res) => {
 
   // Handle streaming request
   if (stream) {
-    return handleWrapperBStreamingRequest(req, res, prompt, projectId, vendor_selection);
+    return handleWrapperBStreamingRequest(req, res, prompt, projectId, vendor_selection, sessionId);
   }
 
   try {
     const startTime = Date.now();
+    
+    // Get session memory if sessionId provided
+    const session = sessionId ? getOrCreateSession(sessionId) : null;
+    let messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string | any[] }> = [
+      { role: 'system', content: WRAPPER_B_SYSTEM }
+    ];
+    
+    if (session && session.messages.length > 0) {
+      // Add conversation history
+      messages.push(...convertMessagesToOpenAIFormat(session.messages));
+    }
     
     // Process uploaded files
     const files = req.files as Express.Multer.File[] || [];
@@ -661,21 +772,26 @@ router.post("/wrapperB", upload.array('files', 10), async (req, res) => {
       console.log(`Processing ${files.length} uploaded files...`);
       processedFiles = await processUploadedFiles(files);
       fileContext = buildContextFromFiles(processedFiles);
+      
+      // Add files to session memory
+      if (sessionId) {
+        addFilesToMemory(sessionId, processedFiles);
+      }
+    } else if (session && session.uploadedFiles.length > 0) {
+      // No new files, but use previously uploaded files from session
+      console.log(`Using ${session.uploadedFiles.length} previously uploaded files from session...`);
+      fileContext = buildContextFromFiles(session.uploadedFiles, true);
+      processedFiles = session.uploadedFiles; // For response metadata
     }
-
-    // Build messages for OpenAI
-    const messages: Array<{ role: 'system' | 'user'; content: string | any[] }> = [
-      { role: 'system', content: WRAPPER_B_SYSTEM }
-    ];
 
     // Prepare user message content
-    let userContent = `PROJECT_ID=${projectId ?? ""}\\nVENDOR=${vendor_selection ?? "Generic"}\\n\\n`;
+    let userContent = `PROJECT_ID=${projectId ?? ""}\nVENDOR=${vendor_selection ?? "Generic"}\n\n`;
     
     if (fileContext) {
-      userContent += fileContext + "\\n\\n";
+      userContent += fileContext + "\n\n";
     }
     
-    userContent += `USER_PROMPT:\\n${prompt}\\n\\n`;
+    userContent += `USER_PROMPT:\n${prompt}\n\n`;
     userContent += `RESPONSE REQUIREMENTS: Respond ONLY with valid JSON matching the schema specified in system message. Include ALL required fields: status, task_type, assumptions, answer_md, artifacts, next_actions, errors. No text outside the JSON object.`;
 
     // Handle images separately for vision model
@@ -735,14 +851,20 @@ router.post("/wrapperB", upload.array('files', 10), async (req, res) => {
 
     console.log("🔍 Raw AI response:", raw);
 
+    // Save to memory if sessionId provided
+    if (sessionId) {
+      addToMemory(sessionId, 'user', prompt);
+      addToMemory(sessionId, 'assistant', raw);
+    }
+
     let data: any;
     try {
       // Clean and parse JSON response
       let cleanedRaw = raw.trim();
       
       // Remove markdown code blocks
-      cleanedRaw = cleanedRaw.replace(/```json\\s*|\\s*```/g, "");
-      cleanedRaw = cleanedRaw.replace(/```\\s*|\\s*```/g, "");
+      cleanedRaw = cleanedRaw.replace(/```json\s*|\s*```/g, "");
+      cleanedRaw = cleanedRaw.replace(/```\s*|\s*```/g, "");
       
       // Clean duplicate keys
       cleanedRaw = removeDuplicateJsonKeys(cleanedRaw);
@@ -809,8 +931,8 @@ Analyze this request: ${prompt}`;
           const retryRaw = retryResponse.choices[0]?.message?.content ?? "";
           if (retryRaw) {
             let retryCleanedRaw = retryRaw.trim();
-            retryCleanedRaw = retryCleanedRaw.replace(/```json\\s*|\\s*```/g, "");
-            retryCleanedRaw = retryCleanedRaw.replace(/```\\s*|\\s*```/g, "");
+            retryCleanedRaw = retryCleanedRaw.replace(/```json\s*|\s*```/g, "");
+            retryCleanedRaw = retryCleanedRaw.replace(/```\s*|\s*```/g, "");
             retryCleanedRaw = removeDuplicateJsonKeys(retryCleanedRaw);
             
             const retryParsedJson = JSON.parse(retryCleanedRaw);
@@ -882,9 +1004,10 @@ Analyze this request: ${prompt}`;
     const processingTime = Date.now() - startTime;
     console.log(`✅ AI response in ${processingTime}ms`);
     
-    // Add file processing metadata to response
-    if (processedFiles.length > 0) {
-      data.processed_files = processedFiles.map(f => ({
+    // Add file processing metadata to response (include session files)
+    const allFiles = session?.uploadedFiles || processedFiles;
+    if (allFiles.length > 0) {
+      data.processed_files = allFiles.map(f => ({
         filename: f.filename,
         type: f.mimetype,
         size: f.size,
@@ -926,6 +1049,65 @@ Analyze this request: ${prompt}`;
       errors: [msg || "Unknown AI service error"],
     });
   }
+});
+
+// ---------- Session Memory Management Endpoints ----------
+
+// Clear session memory
+router.post("/clear-memory", (req, res) => {
+  const { sessionId } = req.body;
+  if (sessionId) {
+    delete sessionMemory[sessionId];
+    res.json({ status: "ok", message: `Memory cleared for session: ${sessionId}` });
+  } else {
+    // Clear all memory
+    Object.keys(sessionMemory).forEach(key => delete sessionMemory[key]);
+    res.json({ status: "ok", message: "All conversation memory cleared" });
+  }
+});
+
+// Get session status
+router.get("/session/:sessionId", (req, res) => {
+  const { sessionId } = req.params;
+  const session = sessionMemory[sessionId];
+  
+  if (session) {
+    res.json({
+      status: "ok",
+      session: {
+        messageCount: session.messages.length,
+        uploadedFiles: session.uploadedFiles.map(f => ({
+          filename: f.filename,
+          type: f.mimetype,
+          size: f.size
+        })),
+        createdAt: session.createdAt,
+        lastAccessed: session.lastAccessed
+      }
+    });
+  } else {
+    res.json({
+      status: "ok",
+      session: null
+    });
+  }
+});
+
+// Get all active sessions
+router.get("/sessions", (req, res) => {
+  const sessions = Object.keys(sessionMemory).map(sessionId => ({
+    sessionId,
+    messageCount: sessionMemory[sessionId].messages.length,
+    fileCount: sessionMemory[sessionId].uploadedFiles.length,
+    createdAt: sessionMemory[sessionId].createdAt,
+    lastAccessed: sessionMemory[sessionId].lastAccessed
+  }));
+  
+  res.json({
+    status: "ok",
+    sessions,
+    totalSessions: sessions.length
+  });
 });
 
 // ---------- Fallback error handler ----------

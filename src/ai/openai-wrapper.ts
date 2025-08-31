@@ -2,6 +2,8 @@ import { Router } from "express";
 import { z, ZodIssue } from "zod";
 import OpenAI from "openai";
 import { WRAPPER_A_SYSTEM } from "./wrapper-A-system";
+import { WRAPPER_C_SYSTEM } from "./wrapper-C-system";
+import { WRAPPER_D_SYSTEM } from "./wrapper-D-system";
 import { getAIConfig } from "../config/ai-config";
 import { imageProcessor, ImageInfo } from "../utils/imageProcessor";
 import { documentProcessor, DocumentInfo } from "../utils/documentProcessor";

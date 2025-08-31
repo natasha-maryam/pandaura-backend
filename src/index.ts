@@ -109,9 +109,9 @@ app.use('/api/v1/tags', tagImportRoutes);
 app.use("/api/v1/projects", projectVersionsRoutes);
 // Logic Studio routes
 app.use("/api/v1/projects", logicStudioRoutes);
-// AI routes (OpenAI)
+// AI routes (OpenAI) - Wrapper A with built-in verification & multi-perspective analysis
 app.use('/api/assistant', openaiRoutes);
-// AI Wrapper B routes (Document & Logic Analyst)
+// AI Wrapper B routes (Document & Logic Analyst) - with built-in verification & multi-perspective analysis
 app.use('/api/assistant', wrapperBRoutes);
 
 
