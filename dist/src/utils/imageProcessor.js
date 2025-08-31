@@ -131,6 +131,38 @@ class ImageProcessor {
             return null;
         }
     }
+    // New method for processing images from buffer (for Wrapper B)
+    async processImage(buffer, originalName) {
+        const imageId = (0, uuid_1.v4)();
+        const mimeType = this.getMimeTypeFromName(originalName);
+        const imageInfo = {
+            id: imageId,
+            originalName,
+            filename: originalName,
+            path: '', // Not saved to disk for buffer processing
+            size: buffer.length,
+            mimeType,
+            uploadedAt: new Date()
+        };
+        // TODO: Add image analysis capabilities here
+        // - OCR text extraction
+        // - Object detection for PLC diagrams
+        // - Technical drawing analysis
+        return imageInfo;
+    }
+    getMimeTypeFromName(filename) {
+        const ext = path_1.default.extname(filename).toLowerCase();
+        const mimeMap = {
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.gif': 'image/gif',
+            '.webp': 'image/webp',
+            '.bmp': 'image/bmp',
+            '.tiff': 'image/tiff'
+        };
+        return mimeMap[ext] || 'image/jpeg';
+    }
 }
 exports.ImageProcessor = ImageProcessor;
 exports.imageProcessor = new ImageProcessor();

@@ -1,0 +1,45 @@
+TagName,DataType,Scope,Address,Direction,Description
+Motor_Start_Pump_01,BOOL,Global,%I0.0,Input,Main pump motor start command
+Motor_Stop_Pump_01,BOOL,Global,%I0.1,Input,Main pump motor stop command
+Motor_Start_Pump_02,BOOL,Global,%I0.2,Input,Secondary pump motor start command
+Motor_Stop_Pump_02,BOOL,Global,%I0.3,Input,Secondary pump motor stop command
+Emergency_Stop_Zone_1,BOOL,Global,%I0.7,Input,Emergency stop for Zone 1
+Emergency_Stop_Zone_2,BOOL,Global,%I1.7,Input,Emergency stop for Zone 2
+Level_Switch_High,BOOL,Global,%I2.0,Input,High level switch in tank
+Level_Switch_Low,BOOL,Global,%I2.1,Input,Low level switch in tank
+Pressure_Switch_High,BOOL,Global,%I2.2,Input,High pressure safety switch
+Flow_Switch_Low,BOOL,Global,%I2.3,Input,Low flow alarm switch
+Motor_Contactor_Pump_01,BOOL,Global,%Q0.0,Output,Pump 1 motor contactor
+Motor_Contactor_Pump_02,BOOL,Global,%Q0.1,Output,Pump 2 motor contactor
+Alarm_Horn,BOOL,Global,%Q0.2,Output,Audible alarm horn
+Alarm_Light_Red,BOOL,Global,%Q0.3,Output,Red warning light
+Alarm_Light_Green,BOOL,Global,%Q0.4,Output,Green status light
+Valve_Inlet_Main,BOOL,Global,%Q1.0,Output,Main inlet valve control
+Valve_Outlet_Main,BOOL,Global,%Q1.1,Output,Main outlet valve control
+Valve_Bypass,BOOL,Global,%Q1.2,Output,Bypass valve control
+Speed_Setpoint_Pump_01,REAL,Global,%IW10,Input,Pump 1 speed setpoint 0-100%
+Speed_Setpoint_Pump_02,REAL,Global,%IW12,Input,Pump 2 speed setpoint 0-100%
+Pressure_Analog_Input,REAL,Global,%IW20,Input,Pressure transmitter 4-20mA input
+Flow_Analog_Input,REAL,Global,%IW22,Input,Flow transmitter 4-20mA input
+Level_Analog_Input,REAL,Global,%IW24,Input,Level transmitter 4-20mA input
+Temperature_Input,REAL,Global,%IW26,Input,Temperature sensor RTD input
+Speed_Output_Pump_01,REAL,Global,%QW10,Output,Pump 1 VFD speed output
+Speed_Output_Pump_02,REAL,Global,%QW12,Output,Pump 2 VFD speed output
+Pressure_Setpoint,REAL,Global,%QW20,Output,Pressure controller setpoint
+Flow_Setpoint,REAL,Global,%QW22,Output,Flow controller setpoint
+System_Running,BOOL,Local,None,Internal,Overall system running status
+System_Fault,BOOL,Local,None,Internal,System fault indication
+Pump_01_Running,BOOL,Local,None,Internal,Pump 1 running status
+Pump_02_Running,BOOL,Local,None,Internal,Pump 2 running status
+Auto_Mode_Active,BOOL,Local,None,Internal,Automatic mode selection
+Manual_Mode_Active,BOOL,Local,None,Internal,Manual mode selection
+Maintenance_Mode,BOOL,Local,None,Internal,Maintenance mode active
+Safety_System_OK,BOOL,Local,None,Internal,Safety system health check
+PID_Pressure_Output,REAL,Local,None,Internal,Pressure PID controller output
+PID_Flow_Output,REAL,Local,None,Internal,Flow PID controller output
+Runtime_Hours_Pump_01,DINT,Local,None,Internal,Pump 1 total runtime hours
+Runtime_Hours_Pump_02,DINT,Local,None,Internal,Pump 2 total runtime hours
+Cycle_Counter_Total,DINT,Local,None,Internal,Total system cycle counter
+Alarm_Counter,INT,Local,None,Internal,Number of active alarms
+Last_Fault_Code,INT,Local,None,Internal,Last fault code number
+System_Start_Time,TIME,Local,None,Internal,System startup timestamp

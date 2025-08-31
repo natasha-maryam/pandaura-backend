@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcProject xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" ToolsVersion="1.0.0.0">
+  <Project ProjectGUID="{12345678-1234-1234-1234-123456789ABC}" DefaultNamespace="" TargetPlatform="TC3.1">
+    <ItemGroup>
+      <Compile Include="GVL\GVL_Main.TcGVL">
+        <SubType>Code</SubType>
+      </Compile>
+      <Compile Include="POUs\FB_MotorControl.TcPOU">
+        <SubType>Code</SubType>
+      </Compile>
+      <Compile Include="POUs\MAIN.TcPOU">
+        <SubType>Code</SubType>
+      </Compile>
+    </ItemGroup>
+  </Project>
+  
+  <PlcTask Name="PlcTask" Id="{12345678-1234-1234-1234-123456789ABC}">
+    <GlobalVarList>
+      <Variable Name="bMotorStart" Id="{A0000001-0000-0000-0000-000000000000}">
+        <Type>BOOL</Type>
+        <Address>%IX0.0</Address>
+        <Comment>Motor start pushbutton</Comment>
+      </Variable>
+      <Variable Name="bMotorStop" Id="{A0000002-0000-0000-0000-000000000000}">
+        <Type>BOOL</Type>
+        <Address>%IX0.1</Address>
+        <Comment>Motor stop pushbutton</Comment>
+      </Variable>
+      <Variable Name="bEmergencyStop" Id="{A0000003-0000-0000-0000-000000000000}">
+        <Type>BOOL</Type>
+        <Address>%IX0.7</Address>
+        <Comment>Emergency stop input</Comment>
+      </Variable>
+      <Variable Name="rSpeedSetpoint" Id="{A0000004-0000-0000-0000-000000000000}">
+        <Type>REAL</Type>
+        <Address>%IW10</Address>
+        <Comment>Motor speed setpoint 0-100%</Comment>
+      </Variable>
+      <Variable Name="bMotorRunning" Id="{A0000005-0000-0000-0000-000000000000}">
+        <Type>BOOL</Type>
+        <Address>%QX0.0</Address>
+        <Comment>Motor running output</Comment>
+      </Variable>
+      <Variable Name="bMotorFault" Id="{A0000006-0000-0000-0000-000000000000}">
+        <Type>BOOL</Type>
+        <Address>%QX0.1</Address>
+        <Comment>Motor fault indication</Comment>
+      </Variable>
+    </GlobalVarList>
+  </PlcTask>
+
+  <POU Name="FB_MotorControl" Id="{B0000001-0000-0000-0000-000000000000}">
+    <Declaration>
+FUNCTION_BLOCK FB_MotorControl
+VAR_INPUT
+    bStart          : BOOL;     // Start command
+    bStop           : BOOL;     // Stop command  
+    bEStop          : BOOL;     // Emergency stop
+    rSpeedSP        : REAL;     // Speed setpoint
+END_VAR
+
+VAR_OUTPUT
+    bRunning        : BOOL;     // Motor running status
+    bFault          : BOOL;     // Fault status
+    rActualSpeed    : REAL;     // Actual speed feedback
+END_VAR
+
+VAR
+    fbStartTimer    : TON;      // Startup timer
+    fbFaultTimer    : TOF;      // Fault reset timer
+    bInternal       : BOOL;     // Internal state
+END_VAR
+    </Declaration>
+    <Implementation>
+      <ST>
+// Motor Control Function Block
+// Safety: Emergency stop has absolute priority
+IF bEStop THEN
+    bRunning := FALSE;
+    bFault := TRUE;
+    rActualSpeed := 0.0;
+    RETURN;
+END_IF;
+
+// Startup sequence with timer
+IF bStart AND NOT bStop AND NOT bFault THEN
+    fbStartTimer(IN := TRUE, PT := T#2S);
+    IF fbStartTimer.Q THEN
+        bRunning := TRUE;
+        rActualSpeed := rSpeedSP;
+        bInternal := TRUE;
+    END_IF;
+ELSIF bStop OR bFault THEN
+    bRunning := FALSE;
+    rActualSpeed := 0.0;
+    fbStartTimer(IN := FALSE);
+    bInternal := FALSE;
+END_IF;
+
+// Fault handling with auto-reset
+fbFaultTimer(IN := NOT bFault, PT := T#5S);
+IF fbFaultTimer.Q AND NOT bEStop THEN
+    bFault := FALSE;
+END_IF;
+      </ST>
+    </Implementation>
+  </POU>
+
+  <POU Name="MAIN" Id="{C0000001-0000-0000-0000-000000000000}">
+    <Declaration>
+PROGRAM MAIN
+VAR
+    fbMotor1        : FB_MotorControl;  // Motor control instance
+    fbMotor2        : FB_MotorControl;  // Second motor instance
+END_VAR
+    </Declaration>
+    <Implementation>
+      <ST>
+// Main program execution
+// Motor 1 control
+fbMotor1(
+    bStart := bMotorStart,
+    bStop := bMotorStop,
+    bEStop := bEmergencyStop,
+    rSpeedSP := rSpeedSetpoint,
+    bRunning => bMotorRunning,
+    bFault => bMotorFault
+);
+
+// Safety interlock: All motors stop on emergency
+IF bEmergencyStop THEN
+    bMotorRunning := FALSE;
+    bMotorFault := TRUE;
+END_IF;
+      </ST>
+    </Implementation>
+  </POU>
+</TcPlcProject>

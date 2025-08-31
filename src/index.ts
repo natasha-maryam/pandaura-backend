@@ -4,6 +4,7 @@ import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import authRoutes from "./routes/auth-new";
 import openaiRoutes from './ai/openai-wrapper';
+import wrapperBRoutes from './ai/wrapper-B-route';
 import orgRoutes from "./routes/orgs.new";
 import projectsRoutes from "./routes/projects-new";
 import tagsRoutes from "./routes/tags-new";
@@ -110,6 +111,8 @@ app.use("/api/v1/projects", projectVersionsRoutes);
 app.use("/api/v1/projects", logicStudioRoutes);
 // AI routes (OpenAI)
 app.use('/api/assistant', openaiRoutes);
+// AI Wrapper B routes (Document & Logic Analyst)
+app.use('/api/assistant', wrapperBRoutes);
 
 
 // Add a simple test route

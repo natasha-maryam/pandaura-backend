@@ -1,3 +1,5 @@
+require('dotenv').config()
+
 export interface AIConfig {
   openai: {
     apiKey: string;
@@ -7,9 +9,14 @@ export interface AIConfig {
 }
 
 export const getAIConfig = (): AIConfig => {
+  // console.log('Environment check:');
+  // console.log('OPENAI_API_KEY exists:', !!process.env.OPENAI_API_KEY);
+  // console.log('OPENAI_API_KEY length:', process.env.OPENAI_API_KEY?.length || 0);
+  // console.log('OPENAI_API_KEY starts with:', process.env.OPENAI_API_KEY?.substring(0, 10) || 'undefined');
+  
   return {
     openai: {
-      apiKey: process.env.OPENAI_API_KEY || "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",
+      apiKey: process.env.OPENAI_API_KEY || "",
       model: process.env.OPENAI_MODEL_NAME || "gpt-4o-mini",
       baseUrl: process.env.OPENAI_BASE_URL,
     },

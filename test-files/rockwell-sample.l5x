@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="32.00">
+  <Controller Use="Target" Name="ConveyorController" ProcessorType="1756-L75" MajorRev="32" MinorRev="12">
+    <Tags>
+      <Tag Name="Motor_Start_Conveyor" TagType="Base" DataType="BOOL" Constant="false" ExternalAccess="Read/Write">
+        <Description>Start command for main conveyor motor</Description>
+        <Data Format="L5K">
+          <![CDATA[0]]>
+        </Data>
+      </Tag>
+      <Tag Name="Motor_Stop_Conveyor" TagType="Base" DataType="BOOL" Constant="false" ExternalAccess="Read/Write">
+        <Description>Stop command for main conveyor motor</Description>
+        <Data Format="L5K">
+          <![CDATA[0]]>
+        </Data>
+      </Tag>
+      <Tag Name="Conveyor_Speed_SP" TagType="Base" DataType="REAL" Constant="false" ExternalAccess="Read/Write">
+        <Description>Conveyor speed setpoint in ft/min</Description>
+        <Data Format="L5K">
+          <![CDATA[0.0]]>
+        </Data>
+      </Tag>
+      <Tag Name="Emergency_Stop_Input" TagType="Base" DataType="BOOL" Constant="false" ExternalAccess="Read/Write">
+        <Description>Emergency stop pushbutton input</Description>
+        <Data Format="L5K">
+          <![CDATA[0]]>
+        </Data>
+      </Tag>
+      <Tag Name="Motor_Running_Status" TagType="Base" DataType="BOOL" Constant="false" ExternalAccess="Read/Write">
+        <Description>Motor running feedback</Description>
+        <Data Format="L5K">
+          <![CDATA[0]]>
+        </Data>
+      </Tag>
+    </Tags>
+    
+    <Programs>
+      <Program Name="MainProgram" TestEdits="false" MainProgram="true" Disabled="false" UseAsFolder="false">
+        <Tags>
+          <Tag Name="Startup_Timer" TagType="Base" DataType="TIMER" Constant="false" ExternalAccess="None">
+            <Description>Motor startup delay timer</Description>
+          </Tag>
+        </Tags>
+        
+        <Routines>
+          <Routine Name="MainRoutine" Type="RLL">
+            <Description>Main control routine</Description>
+            <RLLContent>
+              <Rung Number="0" Type="N">
+                <Comment>Emergency Stop Logic - Highest Priority</Comment>
+                <Text>XIC(Emergency_Stop_Input)OTE(Motor_Running_Status);</Text>
+              </Rung>
+              <Rung Number="1" Type="N">
+                <Comment>Motor Start Logic with Safety Interlocks</Comment>
+                <Text>XIC(Motor_Start_Conveyor)XIO(Motor_Stop_Conveyor)XIO(Emergency_Stop_Input)TON(Startup_Timer,2000,0);</Text>
+              </Rung>
+              <Rung Number="2" Type="N">
+                <Comment>Motor Running Output</Comment>
+                <Text>XIC(Startup_Timer.DN)XIO(Emergency_Stop_Input)OTE(Motor_Running_Status);</Text>
+              </Rung>
+            </RLLContent>
+          </Routine>
+          
+          <Routine Name="ConveyorControl" Type="ST">
+            <Description>Structured text conveyor control</Description>
+            <STContent>
+              <Line Number="1">// Conveyor Control Routine</Line>
+              <Line Number="2">// Safety: Emergency stop overrides all commands</Line>
+              <Line Number="3">IF Emergency_Stop_Input THEN</Line>
+              <Line Number="4">    Motor_Running_Status := FALSE;</Line>
+              <Line Number="5">    Conveyor_Speed_SP := 0.0;</Line>
+              <Line Number="6">    RETURN;</Line>
+              <Line Number="7">END_IF;</Line>
+              <Line Number="8"></Line>
+              <Line Number="9">// Normal operation</Line>
+              <Line Number="10">IF Motor_Start_Conveyor AND NOT Motor_Stop_Conveyor THEN</Line>
+              <Line Number="11">    IF Conveyor_Speed_SP > 0.0 THEN</Line>
+              <Line Number="12">        Motor_Running_Status := TRUE;</Line>
+              <Line Number="13">    END_IF;</Line>
+              <Line Number="14">ELSIF Motor_Stop_Conveyor THEN</Line>
+              <Line Number="15">    Motor_Running_Status := FALSE;</Line>
+              <Line Number="16">END_IF;</Line>
+            </STContent>
+          </Routine>
+        </Routines>
+      </Program>
+    </Programs>
+    
+    <AddOnInstructions>
+      <AddOnInstruction Name="ConveyorMotor" Revision="1.0">
+        <Description>Add-On Instruction for conveyor motor control</Description>
+        <Parameters>
+          <Parameter Name="EnableIn" TagType="EnableIn" DataType="BOOL" Usage="Input" Required="true"/>
+          <Parameter Name="EnableOut" TagType="EnableOut" DataType="BOOL" Usage="Output" Required="true"/>
+          <Parameter Name="Start_Cmd" TagType="Input" DataType="BOOL" Usage="Input" Required="true"/>
+          <Parameter Name="Stop_Cmd" TagType="Input" DataType="BOOL" Usage="Input" Required="true"/>
+          <Parameter Name="E_Stop" TagType="Input" DataType="BOOL" Usage="Input" Required="true"/>
+          <Parameter Name="Motor_Run" TagType="Output" DataType="BOOL" Usage="Output" Required="true"/>
+          <Parameter Name="Motor_Fault" TagType="Output" DataType="BOOL" Usage="Output" Required="true"/>
+        </Parameters>
+      </AddOnInstruction>
+    </AddOnInstructions>
+  </Controller>
+</RSLogix5000Content>

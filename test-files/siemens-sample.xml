@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Project xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v5">
+  <SW.Blocks.GlobalDB Name="GlobalDB">
+    <AttributeList>
+      <Name>Motor_Control_DB</Name>
+      <Number>1</Number>
+    </AttributeList>
+    <ObjectList>
+      <SW.Blocks.GlobalDB.Var Name="Motor_Start_Pump_01">
+        <AttributeList>
+          <DataType>Bool</DataType>
+          <Address>%M0.0</Address>
+          <Comment>Main conveyor motor start command</Comment>
+        </AttributeList>
+      </SW.Blocks.GlobalDB.Var>
+      <SW.Blocks.GlobalDB.Var Name="Motor_Stop_Pump_01">
+        <AttributeList>
+          <DataType>Bool</DataType>
+          <Address>%M0.1</Address>
+          <Comment>Main conveyor motor stop command</Comment>
+        </AttributeList>
+      </SW.Blocks.GlobalDB.Var>
+      <SW.Blocks.GlobalDB.Var Name="Speed_Setpoint_Pump_01">
+        <AttributeList>
+          <DataType>Real</DataType>
+          <Address>%MD10</Address>
+          <Comment>Motor speed setpoint in RPM</Comment>
+        </AttributeList>
+      </SW.Blocks.GlobalDB.Var>
+      <SW.Blocks.GlobalDB.Var Name="Emergency_Stop_All">
+        <AttributeList>
+          <DataType>Bool</DataType>
+          <Address>%I0.7</Address>
+          <Comment>Emergency stop for all motors</Comment>
+        </AttributeList>
+      </SW.Blocks.GlobalDB.Var>
+    </ObjectList>
+  </SW.Blocks.GlobalDB>
+  
+  <SW.Blocks.FB Name="Motor_Control_FB">
+    <AttributeList>
+      <Name>Motor_Control</Name>
+      <Number>1</Number>
+    </AttributeList>
+    <ObjectList>
+      <SW.Blocks.FB.Interface>
+        <Sections>
+          <Section Name="Input">
+            <Member Name="Start_Command" Datatype="Bool" Comment="Start motor command"/>
+            <Member Name="Stop_Command" Datatype="Bool" Comment="Stop motor command"/>
+            <Member Name="Speed_Setpoint" Datatype="Real" Comment="Speed setpoint RPM"/>
+            <Member Name="Emergency_Stop" Datatype="Bool" Comment="Emergency stop input"/>
+          </Section>
+          <Section Name="Output">
+            <Member Name="Motor_Running" Datatype="Bool" Comment="Motor running status"/>
+            <Member Name="Motor_Fault" Datatype="Bool" Comment="Motor fault indication"/>
+            <Member Name="Actual_Speed" Datatype="Real" Comment="Actual motor speed"/>
+          </Section>
+          <Section Name="Static">
+            <Member Name="Motor_Timer" Datatype="TON" Comment="Motor startup timer"/>
+            <Member Name="Fault_Timer" Datatype="TOF" Comment="Fault delay timer"/>
+          </Section>
+        </Sections>
+      </SW.Blocks.FB.Interface>
+      <SW.Blocks.FB.Implementation>
+        <STSource>
+// Motor Control Function Block
+// Safety: Emergency stop has highest priority
+IF Emergency_Stop THEN
+    Motor_Running := FALSE;
+    Motor_Fault := TRUE;
+    RETURN;
+END_IF;
+
+// Normal operation logic
+IF Start_Command AND NOT Stop_Command AND NOT Motor_Fault THEN
+    Motor_Timer(IN := TRUE, PT := T#2s);
+    IF Motor_Timer.Q THEN
+        Motor_Running := TRUE;
+        Actual_Speed := Speed_Setpoint;
+    END_IF;
+ELSIF Stop_Command OR Motor_Fault THEN
+    Motor_Running := FALSE;
+    Motor_Timer(IN := FALSE);
+END_IF;
+
+// Fault handling
+Fault_Timer(IN := NOT Motor_Fault, PT := T#5s);
+IF Fault_Timer.Q THEN
+    Motor_Fault := FALSE;
+END_IF;
+        </STSource>
+      </SW.Blocks.FB.Implementation>
+    </ObjectList>
+  </SW.Blocks.FB>
+</Project>

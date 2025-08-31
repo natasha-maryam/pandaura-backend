@@ -100,6 +100,8 @@ function cleanAnswerMd(answerMd) {
     let cleaned = answerMd.replace(/```[\s\S]*?```/g, '');
     // Remove inline code blocks (`...`)
     cleaned = cleaned.replace(/`[^`]*`/g, '');
+    // Remove "Next step →" sentences
+    cleaned = cleaned.replace(/Next step → .*/gi, '');
     // Clean up extra whitespace
     cleaned = cleaned.replace(/\n\s*\n\s*\n/g, '\n\n');
     return cleaned.trim();
@@ -948,30 +950,118 @@ async function handleStreamingRequest(req, res, prompt, projectId, vendor_select
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Headers', 'Cache-Control');
-        const stream = await openai.chat.completions.create({
-            model: MODEL_NAME,
-            messages: messages,
-            stream: true,
-            max_tokens: 2000,
-            temperature: 0.2,
-        });
-        let fullResponse = '';
-        for await (const chunk of stream) {
-            const content = chunk.choices[0]?.delta?.content || '';
-            if (content) {
-                fullResponse += content;
-                res.write(`data: ${JSON.stringify({ content, type: 'chunk' })}\n\n`);
+        // Set CORS headers properly for streaming
+        const origin = req.headers.origin;
+        if (origin && (origin.includes('localhost:5173') || origin.includes('vercel.app'))) {
+            res.setHeader('Access-Control-Allow-Origin', origin);
+        }
+        else {
+            res.setHeader('Access-Control-Allow-Origin', 'http://localhost:5173');
+        }
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Cache-Control, X-Requested-With');
+        res.setHeader('Access-Control-Expose-Headers', 'Content-Type, Cache-Control');
+        // For JSON responses, we need to use non-streaming mode but send progress updates
+        res.write(`data: ${JSON.stringify({ content: 'Processing your request...', type: 'status' })}\n\n`);
+        try {
+            const response = await openai.chat.completions.create({
+                model: MODEL_NAME,
+                messages: messages,
+                response_format: { type: "json_object" },
+                max_tokens: 2000,
+                temperature: 0.2,
+            });
+            const raw = response.choices[0]?.message?.content ?? "";
+            if (!raw)
+                throw new Error("Empty response from AI model");
+            // Parse the complete JSON response
+            let cleanedRaw = raw.trim();
+            cleanedRaw = cleanedRaw.replace(/```json\s*|\s*```/g, "");
+            cleanedRaw = cleanedRaw.replace(/```\s*|\s*```/g, "");
+            let jsonString = "";
+            let jsonMatch = cleanedRaw.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                jsonString = jsonMatch[0];
+            }
+            else {
+                const openBrace = cleanedRaw.indexOf('{');
+                if (openBrace !== -1) {
+                    let braceCount = 0;
+                    let endPos = -1;
+                    for (let i = openBrace; i < cleanedRaw.length; i++) {
+                        if (cleanedRaw[i] === '{')
+                            braceCount++;
+                        if (cleanedRaw[i] === '}')
+                            braceCount--;
+                        if (braceCount === 0) {
+                            endPos = i;
+                            break;
+                        }
+                    }
+                    if (endPos !== -1) {
+                        jsonString = cleanedRaw.substring(openBrace, endPos + 1);
+                    }
+                }
+            }
+            if (!jsonString)
+                throw new Error("No JSON structure found in response");
+            jsonString = removeDuplicateJsonKeys(jsonString);
+            const parsedJson = JSON.parse(jsonString);
+            if (!parsedJson.artifacts) {
+                parsedJson.artifacts = {
+                    code: [],
+                    tables: [],
+                    citations: []
+                };
+            }
+            const result = ResponseSchema.safeParse(parsedJson);
+            if (result.success) {
+                const data = result.data;
+                // Clean the answer_md to remove any code blocks
+                if (data.answer_md) {
+                    data.answer_md = cleanAnswerMd(data.answer_md);
+                }
+                // Send the answer content as streaming chunks
+                const answer = data.answer_md || "";
+                const words = answer.split(' ');
+                const chunkSize = 3; // Send 3 words at a time
+                res.write(`data: ${JSON.stringify({ content: '', type: 'start' })}\n\n`);
+                for (let i = 0; i < words.length; i += chunkSize) {
+                    const chunk = words.slice(i, i + chunkSize).join(' ') + (i + chunkSize < words.length ? ' ' : '');
+                    res.write(`data: ${JSON.stringify({ content: chunk, type: 'chunk' })}\n\n`);
+                    // Small delay to simulate typing effect
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                }
+                // Send the complete response
+                res.write(`data: ${JSON.stringify({
+                    type: 'complete',
+                    answer: data.answer_md,
+                    fullResponse: data
+                })}\n\n`);
+            }
+            else {
+                // Send error response
+                res.write(`data: ${JSON.stringify({
+                    type: 'error',
+                    error: 'Response validation failed',
+                    content: 'The AI response did not match the expected format.'
+                })}\n\n`);
             }
         }
+        catch (parseError) {
+            res.write(`data: ${JSON.stringify({
+                type: 'error',
+                error: parseError instanceof Error ? parseError.message : 'Parse error',
+                content: 'Failed to process the AI response.'
+            })}\n\n`);
+        }
         // Send end signal
-        res.write(`data: ${JSON.stringify({ type: 'end', fullResponse })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'end' })}\n\n`);
         res.end();
         // Save to memory if sessionId provided
         if (sessionId) {
             addToMemory(sessionId, 'user', userMessage);
-            addToMemory(sessionId, 'assistant', fullResponse);
+            addToMemory(sessionId, 'assistant', 'Response sent via streaming');
         }
     }
     catch (error) {

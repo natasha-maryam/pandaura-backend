@@ -9,6 +9,7 @@ const helmet_1 = __importDefault(require("helmet"));
 const cookie_parser_1 = __importDefault(require("cookie-parser"));
 const auth_new_1 = __importDefault(require("./routes/auth-new"));
 const openai_wrapper_1 = __importDefault(require("./ai/openai-wrapper"));
+const wrapper_B_route_1 = __importDefault(require("./ai/wrapper-B-route"));
 const orgs_new_1 = __importDefault(require("./routes/orgs.new"));
 const projects_new_1 = __importDefault(require("./routes/projects-new"));
 const tags_new_1 = __importDefault(require("./routes/tags-new"));
@@ -41,7 +42,18 @@ const corsOptions = {
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: [
+        "Content-Type",
+        "Authorization",
+        "Accept",
+        "Cache-Control",
+        "X-Requested-With",
+        "sec-ch-ua",
+        "sec-ch-ua-mobile",
+        "sec-ch-ua-platform",
+        "User-Agent",
+        "Referer"
+    ],
     exposedHeaders: ["Content-Disposition"], // ✅ Expose Content-Disposition header for file downloads
 };
 // ✅ Preflight handler first (before routes/middleware)
@@ -49,7 +61,7 @@ app.use((req, res, next) => {
     if (req.method === "OPTIONS") {
         res.header("Access-Control-Allow-Origin", req.headers.origin || "");
         res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-        res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+        res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, Cache-Control, X-Requested-With, sec-ch-ua, sec-ch-ua-mobile, sec-ch-ua-platform, User-Agent, Referer");
         res.header("Access-Control-Allow-Credentials", "true");
         res.header("Access-Control-Expose-Headers", "Content-Disposition"); // ✅ Expose Content-Disposition
         return res.sendStatus(204);
@@ -87,6 +99,8 @@ app.use("/api/v1/projects", project_versions_new_1.default);
 app.use("/api/v1/projects", logic_studio_1.default);
 // AI routes (OpenAI)
 app.use('/api/assistant', openai_wrapper_1.default);
+// AI Wrapper B routes (Document & Logic Analyst)
+app.use('/api/assistant', wrapper_B_route_1.default);
 // Add a simple test route
 app.get("/api/v1/simple-test", (req, res) => {
     console.log("Simple test route hit!");
