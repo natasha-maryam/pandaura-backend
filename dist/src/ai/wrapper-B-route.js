@@ -74,24 +74,57 @@ function removeDuplicateJsonKeys(jsonString) {
         return JSON.stringify(parsed);
     }
     catch {
-        const lines = jsonString.split("\n");
-        const seenKeys = new Set();
-        const cleanedLines = [];
-        for (let i = lines.length - 1; i >= 0; i--) {
-            const line = lines[i];
-            const keyMatch = line.match(/^\\s*"([^"]+)"\\s*:/);
-            if (keyMatch) {
-                const key = keyMatch[1];
-                if (!seenKeys.has(key)) {
-                    seenKeys.add(key);
+        // More sophisticated cleaning for malformed JSON
+        let cleaned = jsonString.trim();
+        // Remove any text before the first {
+        const firstBrace = cleaned.indexOf('{');
+        if (firstBrace > 0) {
+            cleaned = cleaned.substring(firstBrace);
+        }
+        // Find the first complete JSON object
+        let braceCount = 0;
+        let jsonEnd = -1;
+        for (let i = 0; i < cleaned.length; i++) {
+            if (cleaned[i] === '{') {
+                braceCount++;
+            }
+            else if (cleaned[i] === '}') {
+                braceCount--;
+                if (braceCount === 0) {
+                    jsonEnd = i;
+                    break;
+                }
+            }
+        }
+        if (jsonEnd > 0) {
+            cleaned = cleaned.substring(0, jsonEnd + 1);
+        }
+        // Try to parse again
+        try {
+            const parsed = JSON.parse(cleaned);
+            return JSON.stringify(parsed);
+        }
+        catch {
+            // Fallback to line-by-line cleaning
+            const lines = cleaned.split("\n");
+            const seenKeys = new Set();
+            const cleanedLines = [];
+            for (let i = lines.length - 1; i >= 0; i--) {
+                const line = lines[i];
+                const keyMatch = line.match(/^\\s*"([^"]+)"\\s*:/);
+                if (keyMatch) {
+                    const key = keyMatch[1];
+                    if (!seenKeys.has(key)) {
+                        seenKeys.add(key);
+                        cleanedLines.unshift(line);
+                    }
+                }
+                else {
                     cleanedLines.unshift(line);
                 }
             }
-            else {
-                cleanedLines.unshift(line);
-            }
+            return cleanedLines.join("\n");
         }
-        return cleanedLines.join("\n");
     }
 }
 async function processUploadedFiles(files) {
@@ -249,6 +282,12 @@ const ReqSchema = zod_1.z.object({
     prompt: zod_1.z.string().min(1),
     projectId: zod_1.z.string().optional(),
     vendor_selection: zod_1.z.enum(["Rockwell", "Siemens", "Beckhoff", "Generic"]).optional(),
+    stream: zod_1.z.union([zod_1.z.boolean(), zod_1.z.string()]).optional().transform(val => {
+        if (typeof val === 'string') {
+            return val.toLowerCase() === 'true';
+        }
+        return val;
+    }),
 });
 // ---------- Health check ----------
 router.get("/health", async (_req, res) => {
@@ -326,13 +365,187 @@ router.post("/test-format", async (req, res) => {
         errors: [],
     });
 });
+// ---------- Streaming handler for Wrapper B ----------
+async function handleWrapperBStreamingRequest(req, res, prompt, projectId, vendor_selection) {
+    try {
+        // Set up streaming response headers
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        // Set CORS headers properly for streaming
+        const origin = req.headers.origin;
+        if (origin && (origin.includes('localhost:5173') || origin.includes('vercel.app'))) {
+            res.setHeader('Access-Control-Allow-Origin', origin);
+        }
+        else {
+            res.setHeader('Access-Control-Allow-Origin', 'http://localhost:5173');
+        }
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Cache-Control, X-Requested-With');
+        res.setHeader('Access-Control-Expose-Headers', 'Content-Type, Cache-Control');
+        // Send initial status
+        res.write(`data: ${JSON.stringify({ content: 'Processing documents and analyzing...', type: 'status' })}\n\n`);
+        // Process uploaded files
+        const files = req.files || [];
+        let processedFiles = [];
+        let fileContext = "";
+        if (files.length > 0) {
+            res.write(`data: ${JSON.stringify({ content: `Processing ${files.length} uploaded files...`, type: 'status' })}\n\n`);
+            processedFiles = await processUploadedFiles(files);
+            fileContext = buildContextFromFiles(processedFiles);
+        }
+        // Build messages for OpenAI
+        const messages = [
+            { role: 'system', content: wrapper_B_system_1.WRAPPER_B_SYSTEM }
+        ];
+        // Prepare user message content
+        let userContent = `PROJECT_ID=${projectId ?? ""}\\nVENDOR=${vendor_selection ?? "Generic"}\\n\\n`;
+        if (fileContext) {
+            userContent += fileContext + "\\n\\n";
+        }
+        userContent += `USER_PROMPT:\\n${prompt}\\n\\n`;
+        userContent += `RESPONSE REQUIREMENTS: Respond ONLY with valid JSON matching the schema specified in system message. Include ALL required fields: status, task_type, assumptions, answer_md, artifacts, next_actions, errors. No text outside the JSON object.`;
+        // Handle images separately for vision model
+        const imageFiles = processedFiles.filter(f => f.imageData);
+        if (imageFiles.length > 0) {
+            // Use vision model for image analysis
+            const content = [
+                { type: 'text', text: userContent }
+            ];
+            // Add images to content
+            imageFiles.forEach(img => {
+                content.push({
+                    type: 'image_url',
+                    image_url: { url: img.imageData }
+                });
+            });
+            messages.push({ role: 'user', content });
+        }
+        else {
+            // Text-only message
+            messages.push({ role: 'user', content: userContent });
+        }
+        res.write(`data: ${JSON.stringify({ content: 'Analyzing with AI...', type: 'status' })}\n\n`);
+        const TIMEOUT_MS = 180000; // 3 minutes for document processing
+        function withTimeout(p, ms) {
+            return new Promise((resolve, reject) => {
+                const t = setTimeout(() => reject(new Error("AI request timeout")), ms);
+                p.then((v) => {
+                    clearTimeout(t);
+                    resolve(v);
+                }).catch((e) => {
+                    clearTimeout(t);
+                    reject(e);
+                });
+            });
+        }
+        // Use vision model if images present, otherwise use standard model
+        const modelToUse = imageFiles.length > 0 ? VISION_MODEL : MODEL_NAME;
+        const response = await withTimeout(openai.chat.completions.create({
+            model: modelToUse,
+            messages: messages,
+            temperature: 0.1,
+            max_tokens: 4000,
+            response_format: { type: "json_object" },
+        }), TIMEOUT_MS);
+        const raw = response.choices[0]?.message?.content ?? "";
+        if (!raw)
+            throw new Error("Empty response from AI model");
+        let data;
+        try {
+            // Clean and parse JSON response
+            let cleanedRaw = raw.trim();
+            // Remove markdown code blocks
+            cleanedRaw = cleanedRaw.replace(/```json\\s*|\\s*```/g, "");
+            cleanedRaw = cleanedRaw.replace(/```\\s*|\\s*```/g, "");
+            // Clean duplicate keys
+            cleanedRaw = removeDuplicateJsonKeys(cleanedRaw);
+            const parsedJson = JSON.parse(cleanedRaw);
+            // Ensure artifacts field exists
+            if (!parsedJson.artifacts) {
+                parsedJson.artifacts = {
+                    code: [],
+                    tables: [],
+                    reports: [],
+                    anchors: [],
+                    citations: []
+                };
+            }
+            // Validate against schema
+            const result = ResponseSchema.safeParse(parsedJson);
+            if (result.success) {
+                data = result.data;
+                // Clean the answer_md to remove any code blocks
+                if (data.answer_md) {
+                    data.answer_md = cleanAnswerMd(data.answer_md);
+                }
+                // Send the answer content as streaming chunks
+                const answer = data.answer_md || "";
+                const words = answer.split(' ');
+                const chunkSize = 5; // Send 5 words at a time for Wrapper B
+                res.write(`data: ${JSON.stringify({ content: '', type: 'start' })}\n\n`);
+                for (let i = 0; i < words.length; i += chunkSize) {
+                    const chunk = words.slice(i, i + chunkSize).join(' ') + (i + chunkSize < words.length ? ' ' : '');
+                    res.write(`data: ${JSON.stringify({ content: chunk, type: 'chunk' })}\n\n`);
+                    // Small delay to simulate typing effect
+                    await new Promise(resolve => setTimeout(resolve, 40));
+                }
+                // Send the complete response with processed files
+                res.write(`data: ${JSON.stringify({
+                    type: 'complete',
+                    answer: data.answer_md,
+                    fullResponse: {
+                        ...data,
+                        processed_files: processedFiles.map(pf => ({
+                            filename: pf.filename,
+                            type: pf.mimetype,
+                            size: pf.size,
+                            extracted_data_available: !!pf.extractedData
+                        }))
+                    }
+                })}\n\n`);
+            }
+            else {
+                // Schema validation failed
+                console.log("⚠️ Wrapper B streaming schema validation failed:", result.error);
+                throw new Error("Invalid response format from AI");
+            }
+        }
+        catch (parseError) {
+            console.error("❌ Wrapper B streaming JSON parse error:", parseError);
+            res.write(`data: ${JSON.stringify({
+                type: 'error',
+                error: 'Failed to parse AI response. Please try again.'
+            })}\n\n`);
+        }
+        // End the stream
+        res.write(`data: ${JSON.stringify({ type: 'end' })}\n\n`);
+        res.end();
+    }
+    catch (error) {
+        console.error("❌ Wrapper B streaming error:", error);
+        res.write(`data: ${JSON.stringify({
+            type: 'error',
+            error: error.message || 'An error occurred during streaming'
+        })}\n\n`);
+        res.end();
+    }
+}
+// Helper function to clean answer_md (same as Wrapper A)
+function cleanAnswerMd(answerMd) {
+    // Remove code blocks from answer_md since code should be in artifacts
+    return answerMd
+        .replace(/```[\s\S]*?```/g, '') // Remove code blocks
+        .replace(/`([^`]+)`/g, '$1') // Remove inline code formatting
+        .trim();
+}
 // ---------- Main wrapper B endpoint ----------
 router.post("/wrapperB", upload.array('files', 10), async (req, res) => {
     const parsed = ReqSchema.safeParse(req.body);
     if (!parsed.success) {
         return res.status(400).json({ error: parsed.error.flatten() });
     }
-    const { prompt, projectId, vendor_selection } = parsed.data;
+    const { prompt, projectId, vendor_selection, stream } = parsed.data;
     // Circuit breaker check
     if (Date.now() < circuitBreakerUntil) {
         return res.status(503).json({
@@ -357,6 +570,10 @@ router.post("/wrapperB", upload.array('files', 10), async (req, res) => {
             errors: ["Prompt exceeds maximum length"],
         });
     }
+    // Handle streaming request
+    if (stream) {
+        return handleWrapperBStreamingRequest(req, res, prompt, projectId, vendor_selection);
+    }
     try {
         const startTime = Date.now();
         // Process uploaded files
@@ -377,7 +594,8 @@ router.post("/wrapperB", upload.array('files', 10), async (req, res) => {
         if (fileContext) {
             userContent += fileContext + "\\n\\n";
         }
-        userContent += `USER_PROMPT:\\n${prompt}`;
+        userContent += `USER_PROMPT:\\n${prompt}\\n\\n`;
+        userContent += `RESPONSE REQUIREMENTS: Respond ONLY with valid JSON matching the schema specified in system message. Include ALL required fields: status, task_type, assumptions, answer_md, artifacts, next_actions, errors. No text outside the JSON object.`;
         // Handle images separately for vision model
         const imageFiles = processedFiles.filter(f => f.imageData);
         if (imageFiles.length > 0) {
@@ -452,25 +670,92 @@ router.post("/wrapperB", upload.array('files', 10), async (req, res) => {
             }
             else {
                 console.log("⚠️ Schema validation failed:", result.error);
-                data = {
-                    status: "error",
-                    task_type: "doc_qa",
-                    assumptions: [],
-                    answer_md: "The AI response did not match the expected format. Original response: " +
-                        (parsedJson.answer_md || raw.trim() || "No readable response"),
-                    artifacts: {
-                        code: [],
-                        tables: [],
-                        reports: [],
-                        anchors: [],
-                        citations: [],
-                    },
-                    next_actions: [],
-                    errors: [
-                        "Response validation failed",
-                        ...result.error.issues.map((e) => `${e.path.join('.')}: ${e.message}`)
-                    ],
-                };
+                console.log("🔄 Attempting retry with explicit format reminder...");
+                // Try one more time with explicit format reminder
+                try {
+                    const retryMessage = `The previous response was not valid JSON. Please respond with EXACTLY this JSON structure:
+{
+  "status": "ok",
+  "task_type": "doc_qa",
+  "assumptions": [],
+  "answer_md": "Your analysis here",
+  "artifacts": {
+    "code": [],
+    "tables": [],
+    "reports": [],
+    "anchors": [],
+    "citations": []
+  },
+  "next_actions": [],
+  "errors": []
+}
+
+Analyze this request: ${prompt}`;
+                    const retryResponse = await withTimeout(openai.chat.completions.create({
+                        model: modelToUse,
+                        messages: [
+                            { role: 'system', content: wrapper_B_system_1.WRAPPER_B_SYSTEM },
+                            { role: 'user', content: userContent },
+                            { role: 'assistant', content: raw },
+                            { role: 'user', content: retryMessage }
+                        ],
+                        temperature: 0.1,
+                        max_tokens: 4000,
+                        response_format: { type: "json_object" },
+                    }), 30000 // 30 second timeout for retry
+                    );
+                    const retryRaw = retryResponse.choices[0]?.message?.content ?? "";
+                    if (retryRaw) {
+                        let retryCleanedRaw = retryRaw.trim();
+                        retryCleanedRaw = retryCleanedRaw.replace(/```json\\s*|\\s*```/g, "");
+                        retryCleanedRaw = retryCleanedRaw.replace(/```\\s*|\\s*```/g, "");
+                        retryCleanedRaw = removeDuplicateJsonKeys(retryCleanedRaw);
+                        const retryParsedJson = JSON.parse(retryCleanedRaw);
+                        if (!retryParsedJson.artifacts) {
+                            retryParsedJson.artifacts = {
+                                code: [],
+                                tables: [],
+                                reports: [],
+                                anchors: [],
+                                citations: []
+                            };
+                        }
+                        const retryResult = ResponseSchema.safeParse(retryParsedJson);
+                        if (retryResult.success) {
+                            data = retryResult.data;
+                            console.log("✅ Retry succeeded - valid response obtained");
+                        }
+                        else {
+                            throw new Error("Retry also failed validation");
+                        }
+                    }
+                    else {
+                        throw new Error("Empty retry response");
+                    }
+                }
+                catch (retryError) {
+                    console.log("❌ Retry failed:", retryError);
+                    // Fall back to error response
+                    data = {
+                        status: "error",
+                        task_type: "doc_qa",
+                        assumptions: [],
+                        answer_md: "The AI response did not match the expected format. Original response: " +
+                            (parsedJson.answer_md || raw.trim() || "No readable response"),
+                        artifacts: {
+                            code: [],
+                            tables: [],
+                            reports: [],
+                            anchors: [],
+                            citations: [],
+                        },
+                        next_actions: [],
+                        errors: [
+                            "Response validation failed",
+                            ...result.error.issues.map((e) => `${e.path.join('.')}: ${e.message}`)
+                        ],
+                    };
+                }
             }
         }
         catch (parseError) {
