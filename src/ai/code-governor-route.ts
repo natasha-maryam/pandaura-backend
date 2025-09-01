@@ -33,20 +33,21 @@ router.post("/code-governor", upload.array('files'), async (req, res) => {
       });
     }
 
-    if (!vendor) {
+    if (!vendor && (!files.length || !files[0])) {
       return res.status(400).json({
         status: "error",
         task_type: "code_gen",
         assumptions: [],
-        answer_md: "Vendor selection is required (Siemens, Rockwell, or Beckhoff).",
+        answer_md: "Vendor selection is required (Siemens, Rockwell, or Beckhoff) OR upload a specification document for auto-detection.",
         artifacts: { code: [], tables: [], citations: [] },
-        next_actions: [],
-        errors: ["Missing vendor selection"],
+        next_actions: ["Specify vendor or upload specification document"],
+        errors: ["Missing vendor selection and no documents for auto-detection"],
       });
     }
 
-    // Process uploaded files to extract specification text
+    // Process uploaded files to extract specification text and detect vendor
     let specText = prompt;
+    let detectedVendor = vendor;
     
     if (files.length > 0) {
       const processedFiles = await Promise.all(
@@ -55,7 +56,8 @@ router.post("/code-governor", upload.array('files'), async (req, res) => {
             const docAnalysis = await documentProcessor.processDocument(file.buffer, file.originalname);
             return {
               filename: file.originalname,
-              content: docAnalysis,
+              content: docAnalysis.content,
+              extractedData: docAnalysis.extractedData,
               type: 'document'
             };
           } catch (error) {
@@ -68,6 +70,31 @@ router.post("/code-governor", upload.array('files'), async (req, res) => {
           }
         })
       );
+
+      // Auto-detect vendor from documents if not provided
+      if (!vendor || vendor === 'auto') {
+        for (const file of processedFiles) {
+          if (file.extractedData?.plcInfo?.vendor) {
+            let detectedVendorName = file.extractedData.plcInfo.vendor.toLowerCase();
+            
+            // Map Schneider to Siemens equivalent (since it was mentioned in prompt)
+            if (detectedVendorName === 'schneider') {
+              detectedVendorName = 'siemens';
+              console.log(`Mapped Schneider/Modicon to Siemens equivalent from ${file.filename}`);
+            }
+            
+            detectedVendor = detectedVendorName;
+            console.log(`Auto-detected vendor: ${detectedVendor} from ${file.filename}`);
+            break;
+          }
+        }
+        
+        // Default to Siemens if no vendor detected
+        if (!detectedVendor || detectedVendor === 'auto') {
+          detectedVendor = 'siemens';
+          console.log('No vendor detected, defaulting to Siemens');
+        }
+      }
 
       // Combine all file content with the prompt
       const fileContent = processedFiles
@@ -100,7 +127,7 @@ router.post("/code-governor", upload.array('files'), async (req, res) => {
           // Generate complete PLC program using the governor
           const result = await orchestrator.generate({
             specText,
-            vendor: vendor.toLowerCase(),
+            vendor: detectedVendor.toLowerCase(),
             projectName: projectName || `PandauraProject_${Date.now()}`
           });
 
@@ -110,7 +137,7 @@ router.post("/code-governor", upload.array('files'), async (req, res) => {
           // Format the response for streaming
           const codeArtifacts = Object.entries(result.files).map(([filename, content]) => ({
             language: filename.endsWith('.scl') ? 'SCL' : 'ST',
-            vendor: vendor,
+            vendor: detectedVendor,
             compilable: true,
             filename,
             content
@@ -122,7 +149,7 @@ router.post("/code-governor", upload.array('files'), async (req, res) => {
             task_type: "code_gen",
             assumptions: [
               "Generated using Code Generation Governor for complete, vendor-compliant code",
-              `Vendor-specific requirements enforced for ${vendor}`,
+              `Vendor-specific requirements enforced for ${detectedVendor}`,
               "All modules include full implementation with no skeleton code"
             ],
             answer_md: `## Complete PLC Program Generated
@@ -130,7 +157,7 @@ router.post("/code-governor", upload.array('files'), async (req, res) => {
 I've generated a complete, production-ready PLC program using the Code Generation Governor to ensure vendor compliance and eliminate skeleton code.
 
 ### Project Overview
-- **Vendor**: ${vendor}
+- **Vendor**: ${detectedVendor}
 - **Project Name**: ${result.bundle.project_dir.split('/').pop()}
 - **Files Generated**: ${Object.keys(result.files).length} files
 - **Total Lines**: ${Object.values(result.files).reduce((sum, content) => sum + content.split('\n').length, 0)} lines
@@ -158,7 +185,7 @@ Would you like me to explain any specific part of the generated code or help wit
             artifacts: {
               code: codeArtifacts,
               tables: [],
-              citations: [`Generated using Code Generation Governor for ${vendor} compliance`]
+              citations: [`Generated using Code Generation Governor for ${detectedVendor} compliance`]
             },
             next_actions: [
               "Import files into development environment",
@@ -205,14 +232,14 @@ Would you like me to explain any specific part of the generated code or help wit
         // Generate complete PLC program using the governor
         const result = await orchestrator.generate({
           specText,
-          vendor: vendor.toLowerCase(),
+          vendor: detectedVendor.toLowerCase(),
           projectName: projectName || `PandauraProject_${Date.now()}`
         });
 
         // Format the response
         const codeArtifacts = Object.entries(result.files).map(([filename, content]) => ({
           language: filename.endsWith('.scl') ? 'SCL' : 'ST',
-          vendor: vendor,
+          vendor: detectedVendor,
           compilable: true,
           filename,
           content
@@ -223,7 +250,7 @@ Would you like me to explain any specific part of the generated code or help wit
           task_type: "code_gen",
           assumptions: [
             "Generated using Code Generation Governor for complete, vendor-compliant code",
-            `Vendor-specific requirements enforced for ${vendor}`,
+            `Vendor-specific requirements enforced for ${detectedVendor}`,
             "All modules include full implementation with no skeleton code"
           ],
           answer_md: `## Complete PLC Program Generated
@@ -231,7 +258,7 @@ Would you like me to explain any specific part of the generated code or help wit
 I've generated a complete, production-ready PLC program using the Code Generation Governor to ensure vendor compliance and eliminate skeleton code.
 
 ### Project Overview
-- **Vendor**: ${vendor}
+- **Vendor**: ${detectedVendor}
 - **Project Name**: ${result.bundle.project_dir.split('/').pop()}
 - **Files Generated**: ${Object.keys(result.files).length} files
 - **Total Lines**: ${Object.values(result.files).reduce((sum, content) => sum + content.split('\n').length, 0)} lines
@@ -241,7 +268,7 @@ ${Object.keys(result.files).map(filename => `- \`${filename}\` (${result.files[f
 
 ### Key Features
 - ✅ **Complete Implementation**: No skeleton code, TODOs, or placeholders
-- ✅ **Vendor Compliance**: ${vendor}-specific requirements enforced
+- ✅ **Vendor Compliance**: ${detectedVendor}-specific requirements enforced
 - ✅ **Safety Systems**: Comprehensive safety interlocks and emergency stops
 - ✅ **Error Handling**: Complete fault detection and recovery mechanisms
 - ✅ **Documentation**: Detailed comments and usage instructions
@@ -249,7 +276,7 @@ ${Object.keys(result.files).map(filename => `- \`${filename}\` (${result.files[f
 - ✅ **Testing**: Comprehensive test cases and validation procedures
 
 ### Next Steps
-1. Import the generated files into your ${vendor} development environment
+1. Import the generated files into your ${detectedVendor} development environment
 2. Review the README.md for setup instructions
 3. Configure I/O mapping according to your hardware
 4. Test in simulation before deployment
@@ -259,7 +286,7 @@ Would you like me to explain any specific part of the generated code or help wit
           artifacts: {
             code: codeArtifacts,
             tables: [],
-            citations: [`Generated using Code Generation Governor for ${vendor} compliance`]
+            citations: [`Generated using Code Generation Governor for ${detectedVendor} compliance`]
           },
           next_actions: [
             "Import files into development environment",

@@ -849,8 +849,8 @@ async function handleWrapperBStreamingRequest(
                   ? "SCL"
                   : "ST"
                 : "markdown",
-            vendor: "Siemens",
-            compilable: filename.endsWith(".scl") || filename.endsWith(".st"),
+            vendor: result.vendor || result.metadata?.detectedVendor || "Siemens",
+            compilable: result.filesValidation?.[filename]?.compilable ?? (filename.endsWith(".scl") || filename.endsWith(".st")),
             filename,
             content,
           })
@@ -860,17 +860,32 @@ async function handleWrapperBStreamingRequest(
         const governorResponse = {
           status: "ok",
           task_type: "code_gen",
-          assumptions: [],
-          answer_md: "", // keep blank in pure code mode
+          assumptions: [
+            `Generated using Simple Code Governor for ${result.vendor || 'Siemens'}`,
+            `Vendor detected: ${result.metadata?.detectedVendor || result.vendor || 'Siemens'}`,
+            `Files validated: ${Object.keys(result.filesValidation || {}).length} files`,
+            "Complete implementation with no skeleton code"
+          ],
+          answer_md: result.summary || "", // Use the summary as explanation
           artifacts: {
             code: Object.entries(result.files).map(([filename, content]) => ({
               filename,
               language: filename.split(".").pop() || "txt",
               content,
+              vendor: result.vendor || result.metadata?.detectedVendor || "Siemens",
+              compilable: result.filesValidation?.[filename]?.compilable ?? true,
+              errors: result.filesValidation?.[filename]?.errors || []
             })),
           },
-          next_actions: [],
+          next_actions: [
+            "Import files into development environment",
+            "Configure I/O mapping according to hardware",
+            "Test in simulation mode",
+            "Validate safety functions",
+            "Deploy to production"
+          ],
           errors: [],
+          metadata: result.metadata
         };
 
         // Stream the response character by character

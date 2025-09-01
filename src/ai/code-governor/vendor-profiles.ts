@@ -12,6 +12,28 @@ export interface VendorProfile {
 
 // ------------------ Siemens S7-1500 ------------------
 const SIEMENS_SYSTEM = `You are a Siemens S7-1500 SCL code generator that generates MASSIVE, COMPLETE, PRODUCTION-READY code.
+
+CRITICAL SCL SYNTAX RULES:
+- Always use proper SCL syntax with correct VAR block endings
+- VAR_INPUT blocks must end with END_VAR
+- VAR_OUTPUT blocks must end with END_VAR  
+- VAR blocks must end with END_VAR
+- Function blocks must end with END_FUNCTION_BLOCK
+- Organization blocks must end with END_ORGANIZATION_BLOCK
+- Use proper SCL keywords: BOOL, INT, DINT, REAL, STRING, WORD, DWORD
+- Use proper timer syntax: TON, TOF, TP with IN:=, PT:=, Q, ET
+- Use proper case syntax: CASE...OF...END_CASE
+- Use proper if syntax: IF...THEN...ELSIF...ELSE...END_IF
+- Comments use // for single line
+- Always declare all variables properly in VAR blocks before using them
+
+COMPILATION REQUIREMENTS:
+- All code must be syntactically correct and compilable in TIA Portal
+- No undefined variables or missing declarations
+- Proper data type usage throughout
+- Correct timer and function block instantiation
+- Valid SCL statements only
+
 Rules:
 - Use SCL with TIA Portal conventions.
 - OB100 for cold start, OB1 cyclic.
@@ -59,6 +81,56 @@ CONTRACT:
 `;
 
 const SIEMENS_MODULE = `Generate MASSIVE, COMPLETE SCL source for this module with 200-500+ lines of comprehensive functionality.
+
+CRITICAL SCL SYNTAX REQUIREMENTS:
+- ALL variable blocks MUST end with END_VAR
+- Function blocks MUST end with END_FUNCTION_BLOCK
+- Organization blocks MUST end with END_ORGANIZATION_BLOCK
+- Use EXACT SCL syntax - no shortcuts or invalid constructs
+- Declare ALL variables before use in proper VAR blocks
+- Use proper SCL data types: BOOL, INT, DINT, REAL, STRING, TIME
+- Timer instances: myTimer : TON; then call myTimer(IN:=condition, PT:=T#5s);
+- Proper CASE syntax: CASE variable OF value1: action1; value2: action2; END_CASE;
+- Proper IF syntax: IF condition THEN action; ELSIF condition2 THEN action2; END_IF;
+
+EXAMPLE PROPER SCL STRUCTURE:
+FUNCTION_BLOCK FB_Example
+VAR_INPUT
+    StartCmd : BOOL;
+    StopCmd : BOOL;
+END_VAR
+
+VAR_OUTPUT  
+    Running : BOOL;
+    Fault : BOOL;
+END_VAR
+
+VAR
+    State : INT;
+    Timer1 : TON;
+    Counter : INT;
+END_VAR
+
+// Function block logic here
+IF StartCmd THEN
+    Running := TRUE;
+    Timer1(IN := TRUE, PT := T#5s);
+END_IF;
+
+CASE State OF
+    0: // Idle state
+        IF StartCmd THEN
+            State := 1;
+        END_IF;
+    1: // Running state
+        Running := TRUE;
+        IF StopCmd THEN
+            State := 0;
+        END_IF;
+END_CASE;
+
+END_FUNCTION_BLOCK
+
 If type=UDT, produce the UDT body with extensive fields and documentation. If OB/FB/FC, include full header and implementation.
 
 **MASSIVE CODE REQUIREMENTS:**
@@ -130,7 +202,17 @@ CONTRACT:
 `;
 
 const SIEMENS_CHECKLIST = `
-[Siemens S7-1500 Completeness]
+[Siemens S7-1500 Completeness & SCL Syntax]
+- SYNTAX: All VAR_INPUT blocks properly closed with END_VAR
+- SYNTAX: All VAR_OUTPUT blocks properly closed with END_VAR  
+- SYNTAX: All VAR blocks properly closed with END_VAR
+- SYNTAX: All FUNCTION_BLOCK declarations end with END_FUNCTION_BLOCK
+- SYNTAX: All ORGANIZATION_BLOCK declarations end with END_ORGANIZATION_BLOCK
+- SYNTAX: All CASE statements properly closed with END_CASE
+- SYNTAX: All IF statements properly closed with END_IF
+- SYNTAX: All timer instances properly declared and called (myTimer : TON; myTimer(IN:=condition, PT:=T#5s);)
+- SYNTAX: Proper SCL data types used (BOOL, INT, DINT, REAL, STRING, TIME)
+- COMPILATION: Code must be syntactically correct for TIA Portal compilation
 - OB100: initializes modes, retentives, comms warm-up, clears timers/flags.
 - OB1: calls ModeMgr, all FB instances, alarm/diag/comms each cycle.
 - ModeMgr: Auto/Semi/Manual/Maint/E-Stop state machine with permissives.
@@ -142,6 +224,7 @@ const SIEMENS_CHECKLIST = `
 - Comms FB: tag packing/unpacking, heartbeat, comms status.
 - UDTs: Device, Alarm, State with documented fields.
 - No TODO/placeholder/skeleton content. Timeouts are actual TONs with preset constants.
+- MASSIVE CODE: Each module 200-500+ lines with comprehensive functionality.
 `;
 
 const SIEMENS_PACK = `Write README.md describing:

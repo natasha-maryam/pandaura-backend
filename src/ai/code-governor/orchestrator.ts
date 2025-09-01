@@ -344,5 +344,57 @@ export class Orchestrator {
         throw new CodeGenError(`Rejected skeletal module '${name}': matched pattern ${pattern}`);
       }
     }
+
+    // Additional SCL syntax validation for Siemens
+    if (name.includes('.scl') || code.includes('FUNCTION_BLOCK') || code.includes('ORGANIZATION_BLOCK')) {
+      this.validateSCLSyntax(code, name);
+    }
+  }
+
+  private validateSCLSyntax(code: string, name: string): void {
+    const sclErrors: string[] = [];
+
+    // Check for proper VAR block endings
+    const varInputBlocks = (code.match(/VAR_INPUT/g) || []).length;
+    const varInputEndings = (code.match(/END_VAR/g) || []).length;
+    
+    if (varInputBlocks > 0 && varInputEndings < varInputBlocks) {
+      sclErrors.push('Missing END_VAR for VAR_INPUT blocks');
+    }
+
+    // Check for proper function block endings
+    if (code.includes('FUNCTION_BLOCK') && !code.includes('END_FUNCTION_BLOCK')) {
+      sclErrors.push('Missing END_FUNCTION_BLOCK');
+    }
+
+    // Check for proper organization block endings
+    if (code.includes('ORGANIZATION_BLOCK') && !code.includes('END_ORGANIZATION_BLOCK')) {
+      sclErrors.push('Missing END_ORGANIZATION_BLOCK');
+    }
+
+    // Check for common syntax errors
+    if (code.includes('VAR_INPUT') && !code.includes('END_VAR')) {
+      sclErrors.push('VAR_INPUT block not properly closed with END_VAR');
+    }
+
+    if (code.includes('VAR_OUTPUT') && !code.match(/VAR_OUTPUT[\s\S]*?END_VAR/)) {
+      sclErrors.push('VAR_OUTPUT block not properly closed with END_VAR');
+    }
+
+    // Check for incomplete CASE statements
+    if (code.includes('CASE') && !code.includes('END_CASE')) {
+      sclErrors.push('CASE statement not properly closed with END_CASE');
+    }
+
+    // Check for incomplete IF statements
+    const ifCount = (code.match(/\bIF\b/g) || []).length;
+    const endIfCount = (code.match(/\bEND_IF\b/g) || []).length;
+    if (ifCount > endIfCount) {
+      sclErrors.push('IF statements not properly closed with END_IF');
+    }
+
+    if (sclErrors.length > 0) {
+      throw new CodeGenError(`SCL Syntax errors in '${name}': ${sclErrors.join(', ')}`);
+    }
   }
 }

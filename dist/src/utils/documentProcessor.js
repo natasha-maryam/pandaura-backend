@@ -306,15 +306,28 @@ class DocumentProcessor {
         try {
             // Check for common PLC patterns
             const lowerContent = content.toLowerCase();
-            // Detect vendor
-            if (lowerContent.includes('siemens') || lowerContent.includes('step 7') || lowerContent.includes('tia portal')) {
+            // Detect vendor with more specific patterns
+            if (lowerContent.includes('siemens') || lowerContent.includes('step 7') || lowerContent.includes('tia portal') ||
+                lowerContent.includes('s7-1500') || lowerContent.includes('s7-300') || lowerContent.includes('s7-400') ||
+                lowerContent.includes('scl') || lowerContent.includes('structured control language')) {
                 extractedData.plcInfo.vendor = 'Siemens';
+                console.log('Detected Siemens vendor from content keywords');
             }
-            else if (lowerContent.includes('rockwell') || lowerContent.includes('studio 5000') || lowerContent.includes('logix')) {
+            else if (lowerContent.includes('rockwell') || lowerContent.includes('studio 5000') || lowerContent.includes('logix') ||
+                lowerContent.includes('controllogix') || lowerContent.includes('compactlogix') || lowerContent.includes('guardlogix') ||
+                lowerContent.includes('structured text') || lowerContent.includes('ladder logic')) {
                 extractedData.plcInfo.vendor = 'Rockwell';
+                console.log('Detected Rockwell vendor from content keywords');
             }
-            else if (lowerContent.includes('beckhoff') || lowerContent.includes('twincat')) {
+            else if (lowerContent.includes('beckhoff') || lowerContent.includes('twincat') || lowerContent.includes('cx') ||
+                lowerContent.includes('ethercat') || lowerContent.includes('beckhoff automation')) {
                 extractedData.plcInfo.vendor = 'Beckhoff';
+                console.log('Detected Beckhoff vendor from content keywords');
+            }
+            else if (lowerContent.includes('schneider') || lowerContent.includes('modicon') || lowerContent.includes('unity') ||
+                lowerContent.includes('m580') || lowerContent.includes('m340') || lowerContent.includes('x80')) {
+                extractedData.plcInfo.vendor = 'Schneider';
+                console.log('Detected Schneider vendor from content keywords (will map to Siemens equivalent)');
             }
             // Enhanced tag patterns for different vendors
             const tagPatterns = [

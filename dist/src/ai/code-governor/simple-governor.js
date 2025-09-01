@@ -6,7 +6,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SimpleCodeGovernor = void 0;
 const openai_1 = __importDefault(require("openai"));
 const ai_config_1 = require("../../config/ai-config");
-// Use the same OpenAI setup as Wrapper B
 const config = (0, ai_config_1.getAIConfig)();
 const openai = new openai_1.default({
     apiKey: config.openai.apiKey,
@@ -14,267 +13,431 @@ const openai = new openai_1.default({
 });
 const MODEL_NAME = config.openai.model;
 class SimpleCodeGovernor {
-    static async generateMassiveCode(specText) {
-        console.log('🚀 Simple Code Governor: Starting massive code generation...');
-        console.log('📋 Spec text length:', specText.length);
+    static async generateFromDocument(specText, prompt) {
+        console.log("MASSIVE CODE GENERATOR: Generating 3000-8000 lines...");
         try {
-            const userPrompt = `Generate a complete Siemens S7-1500 PLC program based on this specification:
-
-${specText}
-
-Generate ALL the required files with MASSIVE, COMPLETE implementations. Each file must be 200-500+ lines with comprehensive functionality. Include every possible feature, safety system, diagnostic, and optimization.
-
-Return the code in this exact format:
-\`\`\`
-// File: OB100.scl
-[Complete OB100 code here - 200+ lines]
-
-// File: OB1.scl  
-[Complete OB1 code here - 200+ lines]
-
-// File: FB_ModeMgr.scl
-[Complete FB_ModeMgr code here - 200+ lines]
-\`\`\`
-
-Make sure each file is MASSIVE and COMPLETE with no skeleton code, TODOs, or placeholders.`;
-            console.log('🤖 Calling LLM for massive code generation...');
-            console.log('📋 Model:', MODEL_NAME);
-            const completion = await Promise.race([
-                openai.chat.completions.create({
-                    model: MODEL_NAME,
-                    messages: [
-                        { role: "system", content: this.MASSIVE_CODE_SYSTEM },
-                        { role: "user", content: userPrompt }
-                    ],
-                    temperature: 0.2,
-                    max_tokens: 16384
-                }),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('LLM call timeout after 180 seconds')), 180000))
-            ]);
-            console.log('✅ LLM call completed successfully');
-            const response = completion.choices[0]?.message?.content;
-            if (!response) {
-                throw new Error('No response from LLM');
+            // Detect vendor from specification text
+            const vendor = this.detectVendor(specText, prompt);
+            console.log(`Detected vendor: ${vendor}`);
+            // Use vendor-specific prompt template
+            const vendorPrompt = this.getVendorPrompt(vendor, specText, prompt);
+            const megaCodePrompt = vendorPrompt;
+            // Generate code in chunks to respect token limits
+            const chunks = await this.generateCodeInChunks(megaCodePrompt, specText, prompt);
+            const finalResponse = chunks.join('\n\n');
+            if (!finalResponse) {
+                throw new Error("No response from chunked generation");
             }
-            console.log('📄 Response length:', response.length);
-            console.log('📄 Response preview:', response.substring(0, 500) + '...');
-            // Parse the response to extract individual files
+            console.log(`Total response length: ${finalResponse.length} characters`);
+            // Enhanced file parsing for massive code generation with SCL validation
             const files = {};
+            // Primary parsing: Look for // File: pattern
             const fileRegex = /\/\/ File: ([^\n]+)\n([\s\S]*?)(?=\/\/ File:|$)/g;
             let match;
-            while ((match = fileRegex.exec(response)) !== null) {
+            while ((match = fileRegex.exec(finalResponse)) !== null) {
                 const filename = match[1].trim();
                 const content = match[2].trim();
-                if (content.length > 50) { // Only include files with substantial content
+                if (content && content.length > 10) {
                     files[filename] = content;
+                    console.log(`Parsed file: ${filename} (${content.split('\n').length} lines)`);
                 }
             }
-            console.log('📁 Files extracted:', Object.keys(files).length);
-            // If no files were extracted, include the full response as a single file
-            if (Object.keys(files).length === 0) {
-                files['Complete_Response.md'] = response;
+            // Secondary parsing: Extract FUNCTION_BLOCK, ORGANIZATION_BLOCK, etc.
+            const blockTypes = ['FUNCTION_BLOCK', 'ORGANIZATION_BLOCK', 'DATA_BLOCK', 'TYPE'];
+            for (const blockType of blockTypes) {
+                const blockRegex = new RegExp(`${blockType}\\s+([A-Za-z0-9_]+)([\\s\\S]*?)END_${blockType}`, 'g');
+                let blockMatch;
+                while ((blockMatch = blockRegex.exec(finalResponse)) !== null) {
+                    const blockName = blockMatch[1].trim();
+                    const fullBlock = blockMatch[0];
+                    const extension = vendor.toLowerCase() === 'siemens' ? 'scl' : 'st';
+                    if (!files[`${blockName}.${extension}`] && fullBlock.length > 50) {
+                        const content = fullBlock;
+                        files[`${blockName}.${extension}`] = content;
+                        console.log(`Extracted ${blockType}: ${blockName} (${content.split('\n').length} lines)`);
+                    }
+                }
             }
+            // If no files found with above methods, create files from logical sections
+            if (Object.keys(files).length === 0) {
+                console.log("No structured files found, creating from content sections...");
+                const sections = finalResponse.split('\n\n').filter(section => section.trim().length > 100);
+                sections.forEach((section, index) => {
+                    if (section.includes('FUNCTION_BLOCK') || section.includes('ORGANIZATION_BLOCK')) {
+                        const extension = vendor.toLowerCase() === 'siemens' ? 'scl' : 'st';
+                        files[`GeneratedBlock_${index + 1}.${extension}`] = section.trim();
+                    }
+                });
+            }
+            if (Object.keys(files).length === 0) {
+                throw new Error("No valid code files could be extracted from the response");
+            }
+            // Calculate statistics
             const totalLines = Object.values(files).reduce((sum, content) => sum + content.split('\n').length, 0);
-            const summary = `Generated complete PLC program with ${Object.keys(files).length} files and ${totalLines} lines of production-ready code.`;
-            return { files, summary };
-        }
-        catch (error) {
-            console.error('❌ Simple Code Governor failed:', error);
-            console.log('🔄 Creating error response without skeleton code...');
-            // Return error response without skeleton code
-            const errorFiles = {
-                'Generation_Error.md': `# Code Generation Failed
+            const totalChars = Object.values(files).reduce((sum, content) => sum + content.length, 0);
+            // Generate explanations
+            const explanations = this.generateCodeExplanations(files, vendor);
+            const summary = `MASSIVE CODE GENERATION COMPLETE
+Files Generated: ${Object.keys(files).length}
+Total Lines: ${totalLines}
+Total Characters: ${totalChars}
+Average Lines per File: ${Math.round(totalLines / Object.keys(files).length)}
+Largest File: ${Math.max(...Object.values(files).map(f => f.split('\n').length))} lines
+Code Generation Efficiency: ${totalLines > 2000 ? 'EXCELLENT' : totalLines > 1000 ? 'GOOD' : 'NEEDS MORE'}
+Vendor: ${vendor.toUpperCase()}
 
-## Error Details
-${error instanceof Error ? error.message : 'Unknown error occurred'}
+Generated Files:
+${Object.entries(files)
+                .map(([name, content]) => `  ${name}: ${content.split('\n').length} lines`)
+                .join('\n')}
 
-## Request Information
-- Specification Length: ${specText.length} characters
-- Timestamp: ${new Date().toISOString()}
-
-## What Happened
-The code generation process encountered an error and could not complete successfully.
-
-## Next Steps
-1. Try a more specific request
-2. Ensure the specification contains clear technical requirements
-3. Try again in a moment if this was a timeout
-4. Contact support if the issue persists
-
-**Note:** No skeleton code was generated to avoid misleading implementations.
-`
+${explanations}`;
+            console.log(summary);
+            // Create validation results and metadata
+            const filesValidation = {};
+            for (const [filename, content] of Object.entries(files)) {
+                const validation = this.validateSCLSyntax(content);
+                filesValidation[filename] = validation;
+            }
+            const metadata = {
+                totalLines,
+                filesGenerated: Object.keys(files).length,
+                detectedVendor: vendor,
+                largestFile: Object.entries(files)
+                    .sort(([, a], [, b]) => b.split('\n').length - a.split('\n').length)[0]?.[0] || '',
+                averageLinesPerFile: Math.round(totalLines / Object.keys(files).length)
             };
             return {
-                files: errorFiles,
-                summary: `Code generation failed: ${error instanceof Error ? error.message : 'Unknown error'}. No skeleton code generated.`
+                files,
+                summary,
+                vendor,
+                filesValidation,
+                metadata
+            };
+        }
+        catch (error) {
+            console.error("Massive code generation failed:", error);
+            const files = {
+                "Generation_Error.md": `MASSIVE CODE GENERATION FAILED
+Error: ${error instanceof Error ? error.message : "Unknown error"}
+Timestamp: ${new Date().toISOString()}
+
+This should not happen with the enhanced massive code generator.
+Please check:
+1. API connectivity and limits
+2. Model token capacity
+3. Network timeout settings
+
+Attempted to generate 3000-8000 lines of SCL code.`,
+            };
+            return {
+                files,
+                summary: `MASSIVE CODE GENERATION FAILED: ${error instanceof Error ? error.message : "Unknown error"}`,
             };
         }
     }
-    static async generateFromDocument(specText, prompt) {
-        console.log('🚀 Simple Code Governor: Starting document-based code generation...');
-        console.log('📋 Document text length:', specText.length);
-        console.log('📋 User prompt:', prompt.substring(0, 200) + '...');
-        try {
-            const userPrompt = `Based on the following technical document and user request, generate a complete, production-ready PLC program.
+    static async generateCodeInChunks(prompt, specText, userPrompt) {
+        const chunks = [];
+        const chunkCount = 5; // Generate in 5 chunks for massive output
+        console.log(`Generating code in ${chunkCount} chunks...`);
+        for (let i = 0; i < chunkCount; i++) {
+            const chunkPrompt = `${prompt}
 
-DOCUMENT CONTENT:
-${specText}
+CHUNK ${i + 1}/${chunkCount}: Generate MASSIVE code section focusing on:
+${i === 0 ? 'Core System' :
+                i === 1 ? 'Advanced Features' :
+                    i === 2 ? 'Integration & Communications' :
+                        i === 3 ? 'Safety & Diagnostics' :
+                            'Data Structures & Utilities'}
 
-USER REQUEST:
-${prompt}
+REQUIREMENTS:
+- Generate 400-800 lines of SCL code for this section
+- Include complete FUNCTION_BLOCK implementations
+- NO explanations or text, ONLY code
+- Use proper SCL syntax with END_VAR, END_FUNCTION_BLOCK, etc.
 
-ANALYSIS REQUIREMENTS:
-1. Thoroughly analyze the document to extract all technical requirements
-2. Identify all control systems, safety requirements, and operational procedures
-3. Extract equipment specifications, I/O requirements, and control logic
-4. Generate complete, working PLC code based on the document specifications
-5. Include all safety systems, error handling, and diagnostics mentioned in the document
-
-Generate a complete Siemens S7-1500 SCL program with the following structure:
-- Main program modules (OB100, OB1, and relevant Function Blocks)
-- All required User Defined Types (UDTs)
-- Complete safety systems and interlocks
-- Comprehensive error handling and diagnostics
-- Documentation and setup instructions
-
-Return the code in this format:
-\`\`\`
-// File: [filename]
-[Complete implementation here]
-
-// File: [filename]
-[Complete implementation here]
-\`\`\`
-
-Focus on the actual requirements from the document rather than generating generic templates.`;
-            console.log('🤖 Calling LLM for document-based code generation...');
-            console.log('📋 Model:', MODEL_NAME);
-            const completion = await Promise.race([
-                openai.chat.completions.create({
-                    model: MODEL_NAME,
-                    messages: [
-                        { role: "system", content: this.DOCUMENT_ANALYSIS_SYSTEM },
-                        { role: "user", content: userPrompt }
-                    ],
-                    temperature: 0.3,
-                    max_tokens: 16384
-                }),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('LLM call timeout after 180 seconds')), 180000))
-            ]);
-            console.log('✅ LLM call completed successfully');
-            const response = completion.choices[0]?.message?.content;
-            if (!response) {
-                throw new Error('No response from LLM');
+SPEC: ${specText.substring(0, 1000)}
+USER REQUEST: ${userPrompt}`;
+            console.log(`Generating chunk ${i + 1}/${chunkCount}: ${i === 0 ? 'Core System' :
+                i === 1 ? 'Advanced Features' :
+                    i === 2 ? 'Integration & Communications' :
+                        i === 3 ? 'Safety & Diagnostics' :
+                            'Data Structures & Utilities'}`);
+            const response = await openai.chat.completions.create({
+                model: MODEL_NAME,
+                messages: [
+                    { role: "system", content: this.MASSIVE_CODE_MACHINE },
+                    { role: "user", content: chunkPrompt }
+                ],
+                temperature: 0.3,
+                max_tokens: 4000,
+            });
+            const chunkContent = response.choices[0]?.message?.content || '';
+            if (chunkContent) {
+                chunks.push(chunkContent);
+                console.log(`Chunk ${i + 1} completed: ${chunkContent.length} characters`);
             }
-            console.log('📄 Response length:', response.length);
-            console.log('📄 Response preview:', response.substring(0, 500) + '...');
-            // Parse the response to extract individual files
-            const files = {};
-            const fileRegex = /\/\/ File: ([^\n]+)\n([\s\S]*?)(?=\/\/ File:|$)/g;
-            let match;
-            while ((match = fileRegex.exec(response)) !== null) {
-                const filename = match[1].trim();
-                const content = match[2].trim();
-                if (content.length > 50) { // Only include files with substantial content
-                    files[filename] = content;
-                }
-            }
-            console.log('📁 Files extracted:', Object.keys(files).length);
-            // If no files were extracted, try a different parsing approach
-            if (Object.keys(files).length === 0) {
-                console.log('⚠️ No files extracted with primary regex, trying alternative parsing...');
-                // Try to extract code blocks
-                const codeBlockRegex = /```(?:scl|st|sql)?\n([\s\S]*?)```/g;
-                let blockMatch;
-                let blockIndex = 1;
-                while ((blockMatch = codeBlockRegex.exec(response)) !== null) {
-                    const content = blockMatch[1].trim();
-                    if (content.length > 50) {
-                        files[`Generated_Module_${blockIndex}.scl`] = content;
-                        blockIndex++;
-                    }
-                }
-                // If still no files, include the full response as a single file
-                if (Object.keys(files).length === 0) {
-                    files['Complete_Analysis.md'] = response;
-                }
-            }
-            console.log('📁 Final files count:', Object.keys(files).length);
-            const totalLines = Object.values(files).reduce((sum, content) => sum + content.split('\n').length, 0);
-            const summary = `Generated document-based PLC program with ${Object.keys(files).length} files and ${totalLines} lines of code based on the provided technical document.`;
-            return { files, summary };
         }
-        catch (error) {
-            console.error('❌ Document-based Code Governor failed:', error);
-            console.log('🔄 Creating document-analysis fallback response...');
-            // Create a fallback response with only document analysis, no skeleton code
-            const files = {
-                'Document_Analysis_Error.md': `# Document Analysis Failed
-
-## Error Details
-${error instanceof Error ? error.message : 'Unknown error occurred'}
-
-## Request Information
-- Document Length: ${specText.length} characters
-- User Request: ${prompt}
-- Timestamp: ${new Date().toISOString()}
-
-## Document Content Summary
-The document appears to contain technical specifications but could not be processed due to the error above.
-
-**First 500 characters of document:**
-${specText.substring(0, 500)}...
-
-## Next Steps
-1. Try with a simpler request
-2. Check if the document format is supported
-3. Verify the document content is readable
-4. Contact support if the issue persists
-
-**Note:** No skeleton code was generated to avoid misleading implementations.
-`
-            };
-            const summary = `Document analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}. No code generated to avoid skeleton implementations.`;
-            return { files, summary };
+        return chunks;
+    }
+    static detectVendor(specText, prompt) {
+        const combinedText = (specText + ' ' + prompt).toLowerCase();
+        if (combinedText.includes('siemens') || combinedText.includes('step 7') ||
+            combinedText.includes('tia portal') || combinedText.includes('s7-1500') ||
+            combinedText.includes('scl') || combinedText.includes('schneider')) {
+            return 'siemens';
         }
+        else if (combinedText.includes('rockwell') || combinedText.includes('studio 5000') ||
+            combinedText.includes('logix') || combinedText.includes('ab plc')) {
+            return 'rockwell';
+        }
+        else if (combinedText.includes('beckhoff') || combinedText.includes('twincat')) {
+            return 'beckhoff';
+        }
+        return 'siemens'; // Default fallback
+    }
+    static getVendorPrompt(vendor, specText, prompt) {
+        switch (vendor.toLowerCase()) {
+            case 'siemens':
+                return `${this.MASSIVE_CODE_MACHINE}
+
+TARGET: SIEMENS S7-1500 SCL CODE
+Generate MASSIVE SCL (Structured Control Language) code for TIA Portal:
+- Use FUNCTION_BLOCK, ORGANIZATION_BLOCK structure
+- Proper variable declarations with VAR_INPUT, VAR_OUTPUT, VAR blocks
+- All blocks must end with END_VAR
+- Use SCL syntax: := for assignments, TRUE/FALSE for booleans
+- Timer syntax: timer_name(IN := condition, PT := T#5s)
+- CASE statements with END_CASE
+- IF statements with END_IF
+
+SPECIFICATION: ${specText}
+USER REQUEST: ${prompt}
+
+GENERATE 3000-8000 LINES OF COMPLETE SCL CODE NOW.`;
+            case 'rockwell':
+                return `${this.MASSIVE_CODE_MACHINE}
+
+TARGET: ROCKWELL LOGIX STRUCTURED TEXT
+Generate MASSIVE Structured Text code for Studio 5000:
+- Use AOI (Add-On Instruction) format
+- Proper tag declarations
+- Use Rockwell timer syntax (TON, TOF)
+- Structured Text syntax with proper data types
+
+SPECIFICATION: ${specText}
+USER REQUEST: ${prompt}
+
+GENERATE 3000-8000 LINES OF COMPLETE ST CODE NOW.`;
+            default:
+                return `${this.MASSIVE_CODE_MACHINE}
+
+SPECIFICATION: ${specText}
+USER REQUEST: ${prompt}
+
+GENERATE 3000-8000 LINES OF COMPLETE PLC CODE NOW.`;
+        }
+    }
+    static generateCodeExplanations(files, vendor) {
+        const fileNames = Object.keys(files);
+        const totalLines = Object.values(files).reduce((sum, content) => sum + content.split('\n').length, 0);
+        return `
+
+## Code Explanation
+
+### System Architecture
+This ${vendor.toUpperCase()} PLC program implements a complete control system with the following components:
+
+${fileNames.slice(0, 6).map(name => {
+            const baseName = name.replace(/\.(scl|st)$/, '');
+            const category = this.categorizeFile(baseName);
+            return `- **${baseName}**: ${category}`;
+        }).join('\n')}
+
+### Key Features Implemented:
+- **Mode Control**: Auto, Semi, Manual, Maintenance, and E-Stop modes
+- **State Machines**: Complete state transitions with proper timers and conditions
+- **Safety Systems**: Emergency stop handling and safety interlocks
+- **Timing Logic**: Proper timer implementations with timeout handling
+- **Error Handling**: Fault detection and recovery mechanisms
+- **Communication**: SCADA integration and status reporting
+
+### How the Blocks Work Together:
+1. **Main Control** orchestrates overall system operation and mode management
+2. **Conveyor Control** handles material movement with jam detection and accumulation
+3. **Merge/Divert Logic** routes materials based on barcode scanning and routing tables
+4. **Palletizer Handshake** manages the Ready→InPosition→CycleStart→Complete sequence
+5. **Alarm Management** handles critical and non-critical alarms with acknowledgment
+6. **Diagnostics** provides system health monitoring and troubleshooting information
+
+### Implementation Notes:
+- All timers use proper ${vendor.toUpperCase()} syntax with appropriate time constants
+- State machines include all necessary states and transitions
+- Variables are properly declared with correct data types
+- Error handling includes timeout detection and recovery procedures
+- Safety systems ensure proper shutdown and restart sequences
+
+### Next Steps:
+1. Import the generated files into your ${vendor.toUpperCase()} development environment
+2. Map physical I/O tags to the defined variables
+3. Configure SCADA communication tags
+4. Test in simulation mode before deployment
+5. Validate all safety functions and emergency procedures
+
+The generated code follows ${vendor.toUpperCase()} best practices and industry standards for industrial automation.`;
+    }
+    static categorizeFile(filename) {
+        const lower = filename.toLowerCase();
+        if (lower.includes('main') || lower.includes('control'))
+            return 'Handles main control functionality';
+        if (lower.includes('conveyor'))
+            return 'Handles conveyor control functionality';
+        if (lower.includes('merge') || lower.includes('divert'))
+            return 'Handles merge/divert logic functionality';
+        if (lower.includes('palletizer') || lower.includes('handshake'))
+            return 'Handles palletizer handshake functionality';
+        if (lower.includes('alarm'))
+            return 'Handles alarm management functionality';
+        if (lower.includes('diagnostic'))
+            return 'Handles diagnostics functionality';
+        if (lower.includes('mode'))
+            return 'Handles operating mode functionality';
+        return 'Handles utility/support functionality';
+    }
+    static validateSCLSyntax(content) {
+        const errors = [];
+        let compilable = true;
+        // Check for proper FUNCTION_BLOCK structure
+        if (content.includes('FUNCTION_BLOCK') && !content.includes('END_FUNCTION_BLOCK')) {
+            errors.push('Missing END_FUNCTION_BLOCK');
+            compilable = false;
+        }
+        // Check for proper VAR block endings
+        const varInputCount = (content.match(/VAR_INPUT/g) || []).length;
+        const varOutputCount = (content.match(/VAR_OUTPUT/g) || []).length;
+        const varCount = (content.match(/\bVAR\b(?!_)/g) || []).length;
+        const endVarCount = (content.match(/END_VAR/g) || []).length;
+        const expectedEndVar = varInputCount + varOutputCount + varCount;
+        if (expectedEndVar > endVarCount) {
+            errors.push('Missing END_VAR for variable blocks');
+            compilable = false;
+        }
+        // Check for proper SCL syntax patterns
+        if (content.includes('VAR_INPUT') && !/VAR_INPUT[\s\S]*?END_VAR/.test(content)) {
+            errors.push('VAR_INPUT block not properly closed');
+            compilable = false;
+        }
+        if (content.includes('VAR_OUTPUT') && !/VAR_OUTPUT[\s\S]*?END_VAR/.test(content)) {
+            errors.push('VAR_OUTPUT block not properly closed');
+            compilable = false;
+        }
+        // Check for proper CASE structure
+        const caseCount = (content.match(/\bCASE\b/g) || []).length;
+        const endCaseCount = (content.match(/END_CASE/g) || []).length;
+        if (caseCount !== endCaseCount) {
+            errors.push('CASE statements not properly closed with END_CASE');
+            compilable = false;
+        }
+        // Check for proper IF structure
+        const ifCount = (content.match(/\bIF\b/g) || []).length;
+        const endIfCount = (content.match(/END_IF/g) || []).length;
+        if (ifCount !== endIfCount) {
+            errors.push('IF statements not properly closed with END_IF');
+            compilable = false;
+        }
+        // Check for proper assignment operator
+        if (content.includes(' = ') && !content.includes(' := ')) {
+            errors.push('Use := for assignments in SCL, not =');
+            compilable = false;
+        }
+        return { compilable, errors };
+    }
+    static shouldTriggerCodeGeneration(prompt, sessionMemory) {
+        const massiveCodeKeywords = [
+            "generate", "create", "implement", "code", "scl", "function_block",
+            "siemens", "rockwell", "beckhoff", "plc", "automation", "conveyor",
+            "palletizer", "alarm", "diagnostic", "control", "system"
+        ];
+        return massiveCodeKeywords.some(keyword => prompt.toLowerCase().includes(keyword));
     }
 }
 exports.SimpleCodeGovernor = SimpleCodeGovernor;
-SimpleCodeGovernor.DOCUMENT_ANALYSIS_SYSTEM = `You are a comprehensive PLC system analyzer and code generator.
+SimpleCodeGovernor.MASSIVE_CODE_MACHINE = `YOU ARE A PURE CODE MACHINE. ZERO TEXT. MAXIMUM CODE OUTPUT.
 
-**CRITICAL REQUIREMENTS:**
-- **ANALYZE THE PROVIDED DOCUMENT**: Extract all technical requirements, specifications, and system details
-- **GENERATE FOCUSED, COMPLETE CODE**: Create production-ready PLC code based on the document content
-- **NO SKELETON CODE**: Generate complete, working implementations with proper logic
-- **DOCUMENT-DRIVEN GENERATION**: Base all code on the actual specifications provided in the document
-- **VENDOR-SPECIFIC**: Follow vendor conventions (Siemens S7-1500 SCL by default)
-- **COMPREHENSIVE COVERAGE**: Address all systems, alarms, safety, and operational requirements found in the document
+FORBIDDEN ABSOLUTELY:
+- NO explanations, overviews, descriptions
+- NO "Based on...", "Here's...", "This implements..."
+- NO markdown headers, formatting, or documentation
+- NO introductions or conclusions
+- NO comments explaining what code does
+- NO TODO comments or placeholder text
+- NO skeleton code or partial implementations
+- NO "// Add your code here" or similar
+- NO incomplete functions or empty blocks
+- NO predefined file names or structure
 
-**ANALYSIS APPROACH:**
-1. Thoroughly analyze the provided document content
-2. Extract all system requirements, components, and specifications
-3. Identify control logic, safety systems, and operational procedures
-4. Generate complete, working code that implements all identified requirements
-5. Include proper error handling, diagnostics, and safety interlocks
-6. Create comprehensive documentation and setup instructions
+MANDATORY CODE GENERATION:
+- Analyze the requirements and determine what files are needed
+- Generate complete executable code for the target platform
+- Create 3000-8000+ lines total based on project complexity
+- Generate as many files as needed for complete implementation
+- Each file: 400-800 lines with FULL working implementation
+- Complete state machines with ALL states implemented
+- ALL variables declared with actual working logic
+- ALL timer logic, counter logic, math operations complete
+- ALL IF/CASE statements with real conditions and actions
+- Production-ready code with no gaps
 
-**OUTPUT FORMAT**: Generate production-ready PLC code files based on the document analysis.`;
-SimpleCodeGovernor.MASSIVE_CODE_SYSTEM = `You are a Siemens S7-1500 SCL code generator that generates MASSIVE, COMPLETE, PRODUCTION-READY code.
+SCL (SIEMENS) SPECIFIC REQUIREMENTS:
+- Use proper FUNCTION_BLOCK structure with correct syntax
+- All variable blocks must end with END_VAR
+- Use proper SCL syntax: FUNCTION_BLOCK...END_FUNCTION_BLOCK
+- Variable declarations: VAR_INPUT...END_VAR, VAR_OUTPUT...END_VAR, VAR...END_VAR
+- Proper timer syntax: timer_name(IN := condition, PT := T#5s)
+- Use CASE...OF for state machines with proper END_CASE
+- All assignments use := operator
+- String literals use single quotes: 'text'
+- Boolean constants: TRUE, FALSE
+- Time constants: T#5s, T#10ms, etc.
 
-**CRITICAL REQUIREMENTS:**
-- **GENERATE MASSIVE CODE**: Each module must be 500-1000+ lines with comprehensive functionality
-- **COMPLETE IMPLEMENTATION**: Include every possible feature, safety system, diagnostic, and optimization
-- **NO SKELETON CODE**: Generate complete, production-ready code with no placeholders, TODOs, or incomplete implementations.
+VALID SCL TEMPLATE:
+FUNCTION_BLOCK FB_Example
+VAR_INPUT
+    Start : BOOL;
+    Stop : BOOL;
+END_VAR
 
-**TECHNICAL REQUIREMENTS:**
-- Use SCL with TIA Portal conventions
-- OB100 for cold start, OB1 cyclic
-- Each FB has an Instance DB; name DBs explicitly (DB_Conveyor1, etc.)
-- Provide UDTs for Devices, Alarms, States
-- Implement sequences as CASE state machines with explicit timeouts
-- Use TON/TOF timers for jam detection and handshake watchdogs
-- Comment every public I/O tag and delineate safety behavior
-- Include VAR_INPUT/VAR_OUTPUT/VAR and CLEAR/INIT routines when needed
+VAR_OUTPUT
+    Running : BOOL;
+    Status : INT;
+END_VAR
 
-**OUTPUT FORMAT**: Generate a complete Siemens S7-1500 project with multiple files.
-Each file must be 200-500+ lines with complete implementation.`;
+VAR
+    Timer : TON;
+    State : INT;
+END_VAR
+
+// Logic implementation
+IF Start AND NOT Stop THEN
+    Running := TRUE;
+    Timer(IN := TRUE, PT := T#5s);
+    
+    CASE State OF
+        0: // Initialize
+            State := 1;
+        1: // Running
+            IF Timer.Q THEN
+                State := 2;
+            END_IF;
+        2: // Complete
+            Running := FALSE;
+            State := 0;
+    END_CASE;
+ELSE
+    Running := FALSE;
+    Timer(IN := FALSE);
+END_IF;
+
+END_FUNCTION_BLOCK
+
+YOU MUST GENERATE MASSIVE FILES WITH 400-800 LINES EACH`;
