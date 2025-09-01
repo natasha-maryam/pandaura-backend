@@ -314,6 +314,11 @@ function buildContextFromFiles(files: ProcessedFile[], includeFromSession: boole
     context += `FILE ${index + 1}: ${file.filename}\n`;
     context += `Type: ${file.mimetype}\n`;
     context += `Size: ${(file.size / 1024).toFixed(2)} KB\n`;
+    context += `Upload timestamp: ${new Date().toISOString()}\n`;
+    
+    // Add unique file identifier
+    const fileHash = Buffer.from(file.filename + file.size + file.mimetype).toString('base64').substring(0, 8);
+    context += `File ID: ${fileHash}\n`;
     
     // Add PLC-specific information if available
     if (file.extractedData?.plcInfo?.vendor) {
@@ -339,10 +344,13 @@ function buildContextFromFiles(files: ProcessedFile[], includeFromSession: boole
       });
     }
     
-    if (file.content && file.content.length < 2000) {
-      context += `Content:\n${file.content}\n`;
+    // Include more file content to make each response unique
+    if (file.content && file.content.length < 3000) {
+      context += `Full Content:\n${file.content}\n`;
     } else if (file.content) {
-      context += `Content (truncated):\n${file.content.substring(0, 1500)}...\n`;
+      // Include more content and add content hash for uniqueness
+      const contentHash = Buffer.from(file.content).toString('base64').substring(0, 12);
+      context += `Content (truncated from ${file.content.length} chars, hash: ${contentHash}):\n${file.content.substring(0, 2500)}...\n`;
     }
     
     if (file.extractedData?.tables) {
@@ -537,19 +545,34 @@ async function handleWrapperBStreamingRequest(req: any, res: any, prompt: string
     let fileContext = "";
     
     if (files.length > 0) {
-      res.write(`data: ${JSON.stringify({ content: `Processing ${files.length} uploaded files...`, type: 'status' })}\n\n`);
+      res.write(`data: ${JSON.stringify({ content: `Processing ${files.length} NEW uploaded files...`, type: 'status' })}\n\n`);
       processedFiles = await processUploadedFiles(files);
       fileContext = buildContextFromFiles(processedFiles);
       
-      // Add files to session memory
+      console.log(`📁 Streaming: Files being processed:`, files.map(f => f.originalname));
+      console.log(`📝 Streaming: Generated file context length: ${fileContext.length} characters`);
+      
+      // Replace files in session memory (don't accumulate)
       if (sessionId) {
-        addFilesToMemory(sessionId, processedFiles);
+        const session = getOrCreateSession(sessionId);
+        session.uploadedFiles = processedFiles; // Replace, don't add
+        console.log(`🔄 Streaming: Updated session ${sessionId} with ${processedFiles.length} files`);
       }
     } else if (session && session.uploadedFiles.length > 0) {
       // No new files, but use previously uploaded files from session
       res.write(`data: ${JSON.stringify({ content: `Using ${session.uploadedFiles.length} previously uploaded files...`, type: 'status' })}\n\n`);
+      console.log(`📁 Streaming: Session files:`, session.uploadedFiles.map(f => f.filename));
       fileContext = buildContextFromFiles(session.uploadedFiles, true);
       processedFiles = session.uploadedFiles; // For response metadata
+    } else {
+      // No files available for document analysis
+      console.log(`⚠️ Streaming: No files provided and no files in session`);
+      res.write(`data: ${JSON.stringify({ 
+        type: 'error', 
+        error: 'Document Analyst requires files to analyze. Please upload PLC files, documents, or images, or switch to General Assistant (Wrapper A).' 
+      })}\n\n`);
+      res.end();
+      return;
     }
 
     // Prepare user message content
@@ -585,11 +608,20 @@ async function handleWrapperBStreamingRequest(req: any, res: any, prompt: string
       conversationHistory.push({ role: 'user', content: userContent });
     }
 
-    // Check if this is a code generation request - ALWAYS trigger for now to test
-    const isCodeGeneration = true; // Force governor activation for testing
+    // Check if this is a code generation request
+    // Exclude tag extraction and analysis requests
+    const isTagExtractionRequest = /\b(extract|list|find|identify|show|get|display)\s+(tags?|variables?|I\/O|inputs?|outputs?)\b/i.test(prompt);
+    const isAnalysisRequest = /\b(analyz|extract|summar|review|examine|inspect|describe|explain|list)\b/i.test(prompt);
+    
+    const isCodeGeneration = !isTagExtractionRequest && !isAnalysisRequest && (
+      /\b(generat|creat|build|write|implement|develop|design)\s+(code|program|scl|ladder|function\s*block|fb_|ob_|udt|plc)\b/i.test(prompt) ||
+      /\b(code\s+for|program\s+for|implement\s+a|create\s+a\s+program|write\s+scl|generate\s+siemens|build\s+rockwell)\b/i.test(prompt)
+    );
 
     console.log('🔍 Code Generation Detection:', {
       prompt: prompt.substring(0, 200) + '...',
+      isTagExtractionRequest,
+      isAnalysisRequest,
       isCodeGeneration,
       vendor_selection,
       promptLength: prompt.length
@@ -602,25 +634,35 @@ async function handleWrapperBStreamingRequest(req: any, res: any, prompt: string
       
       try {
         console.log('🎯 Simple Governor generation parameters:', {
-          specTextLength: prompt.length + (fileContext ? fileContext.length : 0)
+          specTextLength: prompt.length + (fileContext ? fileContext.length : 0),
+          hasFileContext: !!fileContext,
+          fileContextLength: fileContext ? fileContext.length : 0
         });
         
-        res.write(`data: ${JSON.stringify({ content: 'Generating complete Siemens S7-1500 PLC program...', type: 'status' })}\n\n`);
+        res.write(`data: ${JSON.stringify({ content: 'Analyzing uploaded document and generating PLC program...', type: 'status' })}\n\n`);
         
-        // Generate complete PLC program using the simple governor
-        const result = await SimpleCodeGovernor.generateMassiveCode(
-          prompt + (fileContext ? '\n\nFile Context:\n' + fileContext : '')
-        );
+        let result;
+        
+        // Use document-based generation if we have file context
+        if (fileContext && fileContext.length > 100) {
+          console.log('📄 Using document-based code generation with file context');
+          result = await SimpleCodeGovernor.generateFromDocument(fileContext, prompt);
+        } else {
+          console.log('📄 Using massive code generation without specific document context');
+          result = await SimpleCodeGovernor.generateMassiveCode(
+            prompt + (fileContext ? '\n\nFile Context:\n' + fileContext : '')
+          );
+        }
         
         console.log('✅ Simple Governor generation completed! Files generated:', Object.keys(result.files).length);
         
-        res.write(`data: ${JSON.stringify({ content: 'Code generation complete. Applying critic and patches...', type: 'status' })}\n\n`);
+        res.write(`data: ${JSON.stringify({ content: 'Code generation complete. Formatting response...', type: 'status' })}\n\n`);
         
         // Format the response for streaming
         const codeArtifacts = Object.entries(result.files).map(([filename, content]) => ({
-          language: filename.endsWith('.scl') ? 'SCL' : 'ST',
+          language: filename.endsWith('.scl') || filename.endsWith('.st') ? (filename.endsWith('.scl') ? 'SCL' : 'ST') : 'markdown',
           vendor: 'Siemens',
-          compilable: true,
+          compilable: filename.endsWith('.scl') || filename.endsWith('.st'),
           filename,
           content
         }));
@@ -630,18 +672,20 @@ async function handleWrapperBStreamingRequest(req: any, res: any, prompt: string
           status: "ok",
           task_type: "code_gen",
           assumptions: [
-            "Generated using Simple Code Generation Governor for complete, vendor-compliant code",
+            `Generated using Simple Code Generation Governor ${fileContext ? 'with document analysis' : 'for complete, vendor-compliant code'}`,
             "Vendor-specific requirements enforced for Siemens S7-1500",
             "All modules include full implementation with no skeleton code"
           ],
-          answer_md: `## Complete PLC Program Generated
+          answer_md: `## ${fileContext ? 'Document-Based' : 'Complete'} PLC Program Generated
 
-I've generated a complete, production-ready PLC program using the Simple Code Generation Governor to ensure massive, comprehensive code generation.
+I've generated a ${fileContext ? 'document-based, production-ready' : 'complete, production-ready'} PLC program using the Simple Code Generation Governor${fileContext ? ' with comprehensive document analysis' : ' to ensure massive, comprehensive code generation'}.
 
 ### Project Overview
 - **Vendor**: Siemens S7-1500
+- **Generation Method**: ${fileContext ? 'Document Analysis & Code Generation' : 'Massive Code Generation'}
 - **Files Generated**: ${Object.keys(result.files).length} files
 - **Total Lines**: ${Object.values(result.files).reduce((sum, content) => sum + content.split('\n').length, 0)} lines
+${fileContext ? `- **Document Analyzed**: ${Math.round(fileContext.length / 1024)}KB of technical specifications` : ''}
 
 ### Generated Files
 ${Object.keys(result.files).map(filename => `- \`${filename}\` (${result.files[filename].split('\n').length} lines)`).join('\n')}
@@ -650,7 +694,11 @@ ${Object.keys(result.files).map(filename => `- \`${filename}\` (${result.files[f
 ${result.summary}
 
 ### Key Features
-- ✅ **Massive Code Generation**: 500-1000+ lines per module with comprehensive functionality
+${fileContext ? 
+`- ✅ **Document-Based Analysis**: Generated from your uploaded technical specifications
+- ✅ **Requirements Extraction**: Analyzed document content for system requirements
+- ✅ **Specification Compliance**: Code generated based on actual document requirements` :
+`- ✅ **Massive Code Generation**: 500-1000+ lines per module with comprehensive functionality`}
 - ✅ **Complete Implementation**: No skeleton code, TODOs, or placeholders
 - ✅ **Vendor Compliance**: Siemens S7-1500 SCL requirements enforced
 - ✅ **Safety Systems**: Comprehensive safety interlocks and emergency stops
@@ -661,8 +709,8 @@ ${result.summary}
 
 ### Next Steps
 1. Import the generated files into your Siemens TIA Portal development environment
-2. Review the README.md for setup instructions
-3. Configure I/O mapping according to your hardware
+2. Review the ${fileContext ? 'document analysis and ' : ''}generated code for your specific requirements
+3. Configure I/O mapping according to your hardware specifications${fileContext ? ' as identified in the document' : ''}
 4. Test in simulation before deployment
 5. Validate all safety functions and emergency stops
 
@@ -1022,19 +1070,38 @@ router.post("/wrapperB", upload.array('files', 10), async (req, res) => {
     let fileContext = "";
     
     if (files.length > 0) {
-      console.log(`Processing ${files.length} uploaded files...`);
+      console.log(`Processing ${files.length} NEW uploaded files...`);
       processedFiles = await processUploadedFiles(files);
       fileContext = buildContextFromFiles(processedFiles);
       
-      // Add files to session memory
+      console.log(`📁 Files being processed in this request:`, files.map(f => f.originalname));
+      console.log(`📝 Generated file context length: ${fileContext.length} characters`);
+      
+      // Replace files in session memory (don't accumulate)
       if (sessionId) {
-        addFilesToMemory(sessionId, processedFiles);
+        const session = getOrCreateSession(sessionId);
+        session.uploadedFiles = processedFiles; // Replace, don't add
+        console.log(`🔄 Updated session ${sessionId} with ${processedFiles.length} files`);
       }
     } else if (session && session.uploadedFiles.length > 0) {
       // No new files, but use previously uploaded files from session
       console.log(`Using ${session.uploadedFiles.length} previously uploaded files from session...`);
+      console.log(`📁 Session files:`, session.uploadedFiles.map(f => f.filename));
       fileContext = buildContextFromFiles(session.uploadedFiles, true);
       processedFiles = session.uploadedFiles; // For response metadata
+    } else {
+      console.log(`⚠️ No files provided and no files in session`);
+      
+      // Return error if no files are available for document analysis
+      return res.status(400).json({
+        status: "error",
+        task_type: "doc_qa",
+        assumptions: [],
+        answer_md: "Document Analyst requires files to analyze. Please upload PLC files, documents, or images, or switch to General Assistant (Wrapper A).",
+        artifacts: { code: [], tables: [], reports: [], anchors: [], citations: [] },
+        next_actions: ["Upload documents", "Switch to General Assistant"],
+        errors: ["No files available for analysis"],
+      });
     }
 
     // Prepare user message content
@@ -1270,6 +1337,16 @@ Analyze this request: ${prompt}`;
     
     res.json(data);
   } catch (err: any) {
+    const files = req.files as Express.Multer.File[] || [];
+    console.error("❌ Wrapper B error details:", {
+      message: err.message,
+      stack: err.stack,
+      type: err.constructor.name,
+      promptLength: prompt?.length,
+      filesUploaded: files.length,
+      sessionId: sessionId
+    });
+    
     consecutiveFailures++;
     if (consecutiveFailures >= MAX_FAILURES) {
       circuitBreakerUntil = Date.now() + CIRCUIT_BREAKER_TIMEOUT;
@@ -1643,6 +1720,48 @@ router.use((err: any, _req: any, res: any, _next: any) => {
     next_actions: [],
     errors: [String(err?.message || err)],
   });
+});
+
+// ---------- Reset circuit breaker endpoint for testing ----------
+router.post("/resetCircuitBreaker", async (req, res) => {
+  consecutiveFailures = 0;
+  circuitBreakerUntil = 0;
+  console.log("🔄 Circuit breaker manually reset");
+  res.json({
+    status: "ok",
+    message: "Circuit breaker reset successfully"
+  });
+});
+
+// ---------- Clear session endpoint ----------
+router.post("/clearSession", async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    
+    if (!sessionId) {
+      return res.status(400).json({
+        status: "error",
+        message: "Session ID is required"
+      });
+    }
+    
+    // Clear session memory
+    if (sessionMemory[sessionId]) {
+      delete sessionMemory[sessionId];
+      console.log(`🧹 Cleared session memory for: ${sessionId}`);
+    }
+    
+    res.json({
+      status: "ok",
+      message: `Session ${sessionId} cleared successfully`
+    });
+  } catch (error) {
+    console.error('Error clearing session:', error);
+    res.status(500).json({
+      status: "error",
+      message: "Failed to clear session"
+    });
+  }
 });
 
 export default router;

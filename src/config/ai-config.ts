@@ -20,7 +20,7 @@ export const getAIConfig = (): AIConfig => {
       model: process.env.OPENAI_MODEL_NAME || "gpt-4o-mini",
       baseUrl: process.env.OPENAI_BASE_URL,
     },
-  };
+  };``
 };
 
 export const isOpenAIEnabled = (): boolean => {

@@ -14,6 +14,7 @@ const getAIConfig = () => {
             baseUrl: process.env.OPENAI_BASE_URL,
         },
     };
+    ``;
 };
 exports.getAIConfig = getAIConfig;
 const isOpenAIEnabled = () => {
