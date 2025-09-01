@@ -1021,16 +1021,15 @@ async function handleStreamingRequest(req, res, prompt, projectId, vendor_select
                 if (data.answer_md) {
                     data.answer_md = cleanAnswerMd(data.answer_md);
                 }
-                // Send the answer content as streaming chunks
+                // Send the answer content as streaming chunks (character by character)
                 const answer = data.answer_md || "";
-                const words = answer.split(' ');
-                const chunkSize = 3; // Send 3 words at a time
                 res.write(`data: ${JSON.stringify({ content: '', type: 'start' })}\n\n`);
-                for (let i = 0; i < words.length; i += chunkSize) {
-                    const chunk = words.slice(i, i + chunkSize).join(' ') + (i + chunkSize < words.length ? ' ' : '');
-                    res.write(`data: ${JSON.stringify({ content: chunk, type: 'chunk' })}\n\n`);
-                    // Small delay to simulate typing effect
-                    await new Promise(resolve => setTimeout(resolve, 50));
+                // Stream character by character for better typing effect
+                const characters = answer.split('');
+                for (const char of characters) {
+                    res.write(`data: ${JSON.stringify({ content: char, type: 'chunk' })}\n\n`);
+                    // Small delay for character-by-character effect
+                    await new Promise(resolve => setTimeout(resolve, 25)); // 25ms per character
                 }
                 // Send the complete response
                 res.write(`data: ${JSON.stringify({
@@ -1055,16 +1054,15 @@ async function handleStreamingRequest(req, res, prompt, projectId, vendor_select
                     next_actions: ["Tell me about your automation project", "Ask me to generate PLC code", "Upload files for analysis"],
                     errors: []
                 };
-                // Send the fallback response as streaming chunks
+                // Send the fallback response as streaming chunks (character by character)
                 const answer = fallbackResponse.answer_md;
-                const words = answer.split(' ');
-                const chunkSize = 3; // Send 3 words at a time
                 res.write(`data: ${JSON.stringify({ content: '', type: 'start' })}\n\n`);
-                for (let i = 0; i < words.length; i += chunkSize) {
-                    const chunk = words.slice(i, i + chunkSize).join(' ') + (i + chunkSize < words.length ? ' ' : '');
-                    res.write(`data: ${JSON.stringify({ content: chunk, type: 'chunk' })}\n\n`);
-                    // Small delay to simulate typing effect
-                    await new Promise(resolve => setTimeout(resolve, 50));
+                // Stream character by character for better typing effect
+                const characters = answer.split('');
+                for (const char of characters) {
+                    res.write(`data: ${JSON.stringify({ content: char, type: 'chunk' })}\n\n`);
+                    // Small delay for character-by-character effect
+                    await new Promise(resolve => setTimeout(resolve, 25)); // 25ms per character
                 }
                 // Send the complete response
                 res.write(`data: ${JSON.stringify({
@@ -1090,16 +1088,15 @@ async function handleStreamingRequest(req, res, prompt, projectId, vendor_select
                 next_actions: ["Tell me about your automation project", "Ask me to generate PLC code", "Upload files for analysis"],
                 errors: []
             };
-            // Send the fallback response as streaming chunks
+            // Send the fallback response as streaming chunks (character by character)
             const answer = fallbackResponse.answer_md;
-            const words = answer.split(' ');
-            const chunkSize = 3; // Send 3 words at a time
             res.write(`data: ${JSON.stringify({ content: '', type: 'start' })}\n\n`);
-            for (let i = 0; i < words.length; i += chunkSize) {
-                const chunk = words.slice(i, i + chunkSize).join(' ') + (i + chunkSize < words.length ? ' ' : '');
-                res.write(`data: ${JSON.stringify({ content: chunk, type: 'chunk' })}\n\n`);
-                // Small delay to simulate typing effect
-                await new Promise(resolve => setTimeout(resolve, 50));
+            // Stream character by character for better typing effect
+            const characters = answer.split('');
+            for (const char of characters) {
+                res.write(`data: ${JSON.stringify({ content: char, type: 'chunk' })}\n\n`);
+                // Small delay for character-by-character effect
+                await new Promise(resolve => setTimeout(resolve, 25)); // 25ms per character
             }
             // Send the complete response
             res.write(`data: ${JSON.stringify({

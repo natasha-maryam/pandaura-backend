@@ -84,7 +84,7 @@ const config = {
             port: parseInt(process.env.TEST_POSTGRES_PORT || '5432'),
             user: process.env.TEST_POSTGRES_USER || 'postgres',
             password: process.env.TEST_POSTGRES_PASSWORD || 'natasha',
-            database: process.env.TEST_POSTGRES_DB || 'pandaura_dev'
+            database: process.env.TEST_POSTGRES_DB || 'pandaura_dev',
         },
         pool: {
             min: 1,

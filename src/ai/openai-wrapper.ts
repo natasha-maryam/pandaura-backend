@@ -1146,19 +1146,18 @@ async function handleStreamingRequest(req: any, res: any, prompt: string, projec
           data.answer_md = cleanAnswerMd(data.answer_md);
         }
         
-        // Send the answer content as streaming chunks
+        // Send the answer content as streaming chunks (character by character)
         const answer = data.answer_md || "";
-        const words = answer.split(' ');
-        const chunkSize = 3; // Send 3 words at a time
         
         res.write(`data: ${JSON.stringify({ content: '', type: 'start' })}\n\n`);
         
-        for (let i = 0; i < words.length; i += chunkSize) {
-          const chunk = words.slice(i, i + chunkSize).join(' ') + (i + chunkSize < words.length ? ' ' : '');
-          res.write(`data: ${JSON.stringify({ content: chunk, type: 'chunk' })}\n\n`);
+        // Stream character by character for better typing effect
+        const characters = answer.split('');
+        for (const char of characters) {
+          res.write(`data: ${JSON.stringify({ content: char, type: 'chunk' })}\n\n`);
           
-          // Small delay to simulate typing effect
-          await new Promise(resolve => setTimeout(resolve, 50));
+          // Small delay for character-by-character effect
+          await new Promise(resolve => setTimeout(resolve, 25)); // 25ms per character
         }
         
         // Send the complete response
@@ -1185,19 +1184,18 @@ async function handleStreamingRequest(req: any, res: any, prompt: string, projec
           errors: []
         };
         
-        // Send the fallback response as streaming chunks
+        // Send the fallback response as streaming chunks (character by character)
         const answer = fallbackResponse.answer_md;
-        const words = answer.split(' ');
-        const chunkSize = 3; // Send 3 words at a time
         
         res.write(`data: ${JSON.stringify({ content: '', type: 'start' })}\n\n`);
         
-        for (let i = 0; i < words.length; i += chunkSize) {
-          const chunk = words.slice(i, i + chunkSize).join(' ') + (i + chunkSize < words.length ? ' ' : '');
-          res.write(`data: ${JSON.stringify({ content: chunk, type: 'chunk' })}\n\n`);
+        // Stream character by character for better typing effect
+        const characters = answer.split('');
+        for (const char of characters) {
+          res.write(`data: ${JSON.stringify({ content: char, type: 'chunk' })}\n\n`);
           
-          // Small delay to simulate typing effect
-          await new Promise(resolve => setTimeout(resolve, 50));
+          // Small delay for character-by-character effect
+          await new Promise(resolve => setTimeout(resolve, 25)); // 25ms per character
         }
         
         // Send the complete response
@@ -1226,19 +1224,18 @@ async function handleStreamingRequest(req: any, res: any, prompt: string, projec
         errors: []
       };
       
-      // Send the fallback response as streaming chunks
+      // Send the fallback response as streaming chunks (character by character)
       const answer = fallbackResponse.answer_md;
-      const words = answer.split(' ');
-      const chunkSize = 3; // Send 3 words at a time
       
       res.write(`data: ${JSON.stringify({ content: '', type: 'start' })}\n\n`);
       
-      for (let i = 0; i < words.length; i += chunkSize) {
-        const chunk = words.slice(i, i + chunkSize).join(' ') + (i + chunkSize < words.length ? ' ' : '');
-        res.write(`data: ${JSON.stringify({ content: chunk, type: 'chunk' })}\n\n`);
+      // Stream character by character for better typing effect
+      const characters = answer.split('');
+      for (const char of characters) {
+        res.write(`data: ${JSON.stringify({ content: char, type: 'chunk' })}\n\n`);
         
-        // Small delay to simulate typing effect
-        await new Promise(resolve => setTimeout(resolve, 50));
+        // Small delay for character-by-character effect
+        await new Promise(resolve => setTimeout(resolve, 25)); // 25ms per character
       }
       
       // Send the complete response

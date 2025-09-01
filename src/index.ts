@@ -5,6 +5,7 @@ import cookieParser from "cookie-parser";
 import authRoutes from "./routes/auth-new";
 import openaiRoutes from './ai/openai-wrapper';
 import wrapperBRoutes from './ai/wrapper-B-route';
+import codeGovernorRoutes from './ai/code-governor-route';
 import orgRoutes from "./routes/orgs.new";
 import projectsRoutes from "./routes/projects-new";
 import tagsRoutes from "./routes/tags-new";
@@ -20,7 +21,7 @@ import { WebSocketServer } from "ws";
 require('dotenv').config()
 
 const app = express();
-const port = process.env.PORT || 5000;
+const port = process.env.PORT || 5001;
 const server = http.createServer(app);
 
 const allowedOrigins = ["http://localhost:5173", "https://pandaura.vercel.app"];
@@ -113,6 +114,8 @@ app.use("/api/v1/projects", logicStudioRoutes);
 app.use('/api/assistant', openaiRoutes);
 // AI Wrapper B routes (Document & Logic Analyst) - with built-in verification & multi-perspective analysis
 app.use('/api/assistant', wrapperBRoutes);
+// Code Governor routes - Complete, vendor-compliant PLC code generation
+app.use('/api/assistant', codeGovernorRoutes);
 
 
 // Add a simple test route

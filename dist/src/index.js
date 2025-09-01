@@ -10,6 +10,7 @@ const cookie_parser_1 = __importDefault(require("cookie-parser"));
 const auth_new_1 = __importDefault(require("./routes/auth-new"));
 const openai_wrapper_1 = __importDefault(require("./ai/openai-wrapper"));
 const wrapper_B_route_1 = __importDefault(require("./ai/wrapper-B-route"));
+const code_governor_route_1 = __importDefault(require("./ai/code-governor-route"));
 const orgs_new_1 = __importDefault(require("./routes/orgs.new"));
 const projects_new_1 = __importDefault(require("./routes/projects-new"));
 const tags_new_1 = __importDefault(require("./routes/tags-new"));
@@ -24,7 +25,7 @@ const tagSyncSingleton_1 = require("./services/tagSyncSingleton");
 const ws_1 = require("ws");
 require('dotenv').config();
 const app = (0, express_1.default)();
-const port = process.env.PORT || 5000;
+const port = process.env.PORT || 5001;
 const server = http_1.default.createServer(app);
 const allowedOrigins = ["http://localhost:5173", "https://pandaura.vercel.app"];
 const corsOptions = {
@@ -101,6 +102,8 @@ app.use("/api/v1/projects", logic_studio_1.default);
 app.use('/api/assistant', openai_wrapper_1.default);
 // AI Wrapper B routes (Document & Logic Analyst) - with built-in verification & multi-perspective analysis
 app.use('/api/assistant', wrapper_B_route_1.default);
+// Code Governor routes - Complete, vendor-compliant PLC code generation
+app.use('/api/assistant', code_governor_route_1.default);
 // Add a simple test route
 app.get("/api/v1/simple-test", (req, res) => {
     console.log("Simple test route hit!");
