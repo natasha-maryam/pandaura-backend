@@ -611,11 +611,25 @@ async function handleWrapperBStreamingRequest(req: any, res: any, prompt: string
     // Check if this is a code generation request
     // Exclude tag extraction and analysis requests
     const isTagExtractionRequest = /\b(extract|list|find|identify|show|get|display)\s+(tags?|variables?|I\/O|inputs?|outputs?)\b/i.test(prompt);
-    const isAnalysisRequest = /\b(analyz|extract|summar|review|examine|inspect|describe|explain|list)\b/i.test(prompt);
+    const isAnalysisRequest = /\b(analyz|extract|summar|review|examine|inspect|describe|explain|list)\b/i.test(prompt) && 
+      !/\b(generat|creat|build|write|implement|develop|design|continue|finish|complete)\b/i.test(prompt);
     
     const isCodeGeneration = !isTagExtractionRequest && !isAnalysisRequest && (
-      /\b(generat|creat|build|write|implement|develop|design)\s+(code|program|scl|ladder|function\s*block|fb_|ob_|udt|plc)\b/i.test(prompt) ||
-      /\b(code\s+for|program\s+for|implement\s+a|create\s+a\s+program|write\s+scl|generate\s+siemens|build\s+rockwell)\b/i.test(prompt)
+      /\b(generat|creat|build|write|implement|develop|design|convert|transform)\s+(code|program|scl|ladder|function\s*block|fb_|ob_|udt|plc)\b/i.test(prompt) ||
+      /\b(code\s+for|program\s+for|implement\s+a|create\s+a\s+program|write\s+scl|generate\s+siemens|build\s+rockwell|convert.*to|transform.*to|design.*scl|siemens.*s7)\b/i.test(prompt) ||
+      /\b(continue|finish|complete|rest|remaining|all|more)\s+(generat|code|function|block|implement|program|scl)\b/i.test(prompt) ||
+      /\b(continue\s+generating|generate.*all|complete.*code|finish.*code|rest.*code|scl|structured\s+control\s+language|function.*block|siemens|s7-1500|tia\s+portal)\b/i.test(prompt) ||
+      // More aggressive patterns for PLC conversion requests
+      /\b(convert|transform|implement|design).*\b(siemens|s7-1500|scl|structured\s+control\s+language|tia\s+portal|function\s+block|plc)\b/i.test(prompt) ||
+      /\b(operating\s+modes|conveyor|palletizer|handshake|alarm|diagnostic|fb_|ob1|ob100|udt)\b/i.test(prompt) ||
+      // Also check if the previous session context suggests this is code generation continuation
+      (session && session.messages.length > 0 && 
+       session.messages.some(msg => 
+         msg.role === 'assistant' && 
+         (msg.content.includes('FUNCTION_BLOCK') || msg.content.includes('// File:') || msg.content.includes('SCL') || msg.content.includes('END_FUNCTION_BLOCK'))
+       ) && 
+       /\b(continue|all|more|rest|finish|complete)\b/i.test(prompt)
+      )
     );
 
     console.log('🔍 Code Generation Detection:', {
@@ -649,8 +663,8 @@ async function handleWrapperBStreamingRequest(req: any, res: any, prompt: string
           result = await SimpleCodeGovernor.generateFromDocument(fileContext, prompt);
         } else {
           console.log('📄 Using massive code generation without specific document context');
-          result = await SimpleCodeGovernor.generateMassiveCode(
-            prompt + (fileContext ? '\n\nFile Context:\n' + fileContext : '')
+          result = await SimpleCodeGovernor.generateFromDocument(
+            prompt + (fileContext ? '\n\nFile Context:\n' + fileContext : ''), prompt
           );
         }
         
@@ -684,7 +698,7 @@ I've generated a ${fileContext ? 'document-based, production-ready' : 'complete,
 - **Vendor**: Siemens S7-1500
 - **Generation Method**: ${fileContext ? 'Document Analysis & Code Generation' : 'Massive Code Generation'}
 - **Files Generated**: ${Object.keys(result.files).length} files
-- **Total Lines**: ${Object.values(result.files).reduce((sum, content) => sum + content.split('\n').length, 0)} lines
+- **Total Lines**: ${Object.values(result.files).reduce((sum: number, content) => sum + (content as string).split('\n').length, 0)} lines
 ${fileContext ? `- **Document Analyzed**: ${Math.round(fileContext.length / 1024)}KB of technical specifications` : ''}
 
 ### Generated Files
@@ -729,7 +743,7 @@ This response contains a **complete, production-ready Siemens S7-1500 PLC progra
 - **README.md** - Comprehensive documentation (1000+ lines)
 
 **📊 Code Statistics:**
-- **Total Lines**: ${Object.values(result.files).reduce((sum, content) => sum + content.split('\n').length, 0)} lines of code
+- **Total Lines**: ${Object.values(result.files).reduce((sum: number, content) => sum + (content as string).split('\n').length, 0)} lines of code
 - **Files Generated**: ${Object.keys(result.files).length} complete files
 - **Code Quality**: Production-ready with no skeleton code
 - **Documentation**: Extensive inline comments and documentation
