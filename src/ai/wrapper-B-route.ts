@@ -935,17 +935,27 @@ async function handleWrapperBStreamingRequest(
           await new Promise((resolve) => setTimeout(resolve, 20));
         }
 
-        // Send the complete response
+        // Send the complete response (minimal version for Railway compatibility)
+        const minimalResponse = {
+          ...governorResponse,
+          artifacts: {
+            code: [], // Don't send code in complete event - already sent in chunks
+          }
+        };
+        
         res.write(
           `data: ${JSON.stringify({
             type: "complete",
             answer: governorResponse.answer_md,
-            fullResponse: governorResponse,
+            fullResponse: minimalResponse,
+            artifactsSentInChunks: true, // Flag to indicate artifacts were sent separately
+            totalFiles: Object.keys(result.files).length
           })}\n\n`
         );
 
-        console.log(`📤 Sent complete response with ${Object.keys(result.files).length} files in artifacts`);
-        console.log(`📤 Response size: ${JSON.stringify(governorResponse).length} characters`);
+        console.log(`📤 Sent minimal complete response (artifacts sent separately in chunks)`);
+        console.log(`📤 Minimal response size: ${JSON.stringify(minimalResponse).length} characters`);
+        console.log(`📤 Original response size would have been: ${JSON.stringify(governorResponse).length} characters`);
 
         res.write(`data: ${JSON.stringify({ type: "end" })}\n\n`);
         res.end();
