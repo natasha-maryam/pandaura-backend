@@ -842,12 +842,12 @@ async function handleWrapperBStreamingRequest(
 
         res.write(
           `data: ${JSON.stringify({
-            content: "Code generation complete. Formatting response...",
+            content: "Code generation complete. Sending files...",
             type: "status",
           })}\n\n`
         );
 
-        // Format the response for streaming
+        // Send code artifacts IMMEDIATELY to prevent Railway timeout
         const codeArtifacts = Object.entries(result.files).map(
           ([filename, content]) => ({
             language:
@@ -862,6 +862,23 @@ async function handleWrapperBStreamingRequest(
             content,
           })
         );
+
+        // Send artifacts immediately in chunks to prevent timeout
+        console.log(`📤 Sending ${codeArtifacts.length} code artifacts immediately...`);
+        
+        for (let i = 0; i < codeArtifacts.length; i += 5) {
+          const chunk = codeArtifacts.slice(i, i + 5);
+          const artifactChunk = JSON.stringify({
+            type: "artifacts",
+            artifacts: { code: chunk },
+            chunkIndex: Math.floor(i / 5),
+            totalChunks: Math.ceil(codeArtifacts.length / 5)
+          });
+          
+          res.write(`data: ${artifactChunk}\n\n`);
+          res.flush?.(); // Force immediate send
+          console.log(`📤 Sent artifact chunk ${Math.floor(i / 5) + 1}/${Math.ceil(codeArtifacts.length / 5)} (${artifactChunk.length} bytes)`);
+        }
 
         // Create comprehensive response
         const governorResponse = {
@@ -897,11 +914,20 @@ async function handleWrapperBStreamingRequest(
 
         // Stream the response character by character
         const answer = governorResponse.answer_md || "";
+        
+        // Add file listing to the streamed response to ensure it's always visible
+        const fileListingText = `\n\n## Generated Files (${Object.keys(result.files).length} files):\n` +
+          Object.entries(result.files)
+            .map(([name, content]) => `- **${name}**: ${content.split('\n').length} lines`)
+            .join('\n') + '\n\n';
+        
+        const completeAnswer = answer + fileListingText;
+        
         res.write(
           `data: ${JSON.stringify({ content: "", type: "start" })}\n\n`
         );
 
-        const characters = answer.split("");
+        const characters = completeAnswer.split("");
         for (const char of characters) {
           res.write(
             `data: ${JSON.stringify({ content: char, type: "chunk" })}\n\n`
@@ -917,6 +943,9 @@ async function handleWrapperBStreamingRequest(
             fullResponse: governorResponse,
           })}\n\n`
         );
+
+        console.log(`📤 Sent complete response with ${Object.keys(result.files).length} files in artifacts`);
+        console.log(`📤 Response size: ${JSON.stringify(governorResponse).length} characters`);
 
         res.write(`data: ${JSON.stringify({ type: "end" })}\n\n`);
         res.end();
