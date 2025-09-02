@@ -15,6 +15,13 @@ const router = Router();
 
 // ---------- OpenAI client ----------
 const config = getAIConfig();
+
+// Validate API key exists
+if (!config.openai.apiKey) {
+  console.error("🚨 CRITICAL ERROR: OPENAI_API_KEY environment variable not set!");
+  console.error("🚨 Code generation will fail without valid API key");
+}
+
 const openai = new OpenAI({
   apiKey: config.openai.apiKey,
   baseURL: config.openai.baseUrl,

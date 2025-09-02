@@ -2,6 +2,12 @@ import OpenAI from "openai";
 import { getAIConfig } from "../../config/ai-config";
 
 const config = getAIConfig();
+
+// Validate API key exists
+if (!config.openai.apiKey) {
+  throw new Error("OPENAI_API_KEY environment variable not set. Cannot generate code without valid API key.");
+}
+
 const openai = new OpenAI({
   apiKey: config.openai.apiKey,
   baseURL: config.openai.baseUrl,
@@ -109,6 +115,12 @@ YOU MUST GENERATE MASSIVE FILES WITH 400-800 LINES EACH`;
     prompt: string
   ): Promise<SimpleGovernorResult> {
     console.log("MASSIVE CODE GENERATOR: Generating 3000-8000 lines...");
+
+    // Validate API key before proceeding
+    const config = getAIConfig();
+    if (!config.openai.apiKey) {
+      throw new Error("OPENAI_API_KEY not configured. Please set the environment variable in Railway dashboard.");
+    }
 
     try {
       // Detect vendor from specification text
